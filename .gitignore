@@ -1,0 +1,11 @@
+__pycache__
+*.py
+
+/hproxy.egg-info
+/build
+/dist
+
+/config.json
+/configs
+/cert.pem
+/key.pem
