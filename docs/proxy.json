@@ -1,0 +1,46 @@
+{
+  "inb": {
+    "scheme": "auto",
+    "host": "localhost",
+    "port": 1080,
+    "tls": null,
+    "ws": null,
+    "extra": {}
+  },
+  "oubs": {
+    "direct": [
+      {
+        "managed": false,
+        "enabled": true,
+        "name": "direct",
+        "group": "default",
+        "dnsname": "",
+        "delay": 0.0,
+        "scheme": "direct",
+        "host": "",
+        "port": 0,
+        "tls": null,
+        "ws": null,
+        "extra": {}
+      }
+    ],
+    "block": [
+      {
+        "managed": false,
+        "enabled": true,
+        "name": "block",
+        "group": "default",
+        "dnsname": "",
+        "delay": 0.0,
+        "scheme": "block",
+        "host": "",
+        "port": 0,
+        "tls": null,
+        "ws": null,
+        "extra": {}
+      }
+    ]
+  },
+  "tags": [["*", "direct"]],
+  "extra": {}
+}

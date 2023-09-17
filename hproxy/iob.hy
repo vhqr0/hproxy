@@ -34,9 +34,12 @@
   #^ str path)
 
 (defclass OUBConf [BaseModel]
+  #^ bool                     managed
+  #^ bool                     enabled
   #^ str                      name
-  #^ (of Optional str)        group
-  #^ (of Optional float)      delay
+  #^ str                      group
+  #^ str                      dnsname
+  #^ float                    delay
   #^ str                      scheme
   #^ str                      host
   #^ int                      port

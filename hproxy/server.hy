@@ -20,7 +20,8 @@
 (defclass ServerConf [BaseModel]
   #^ INBConf                         inb
   #^ (of dict str (of list OUBConf)) oubs
-  #^ (of dict str str)               tags)
+  #^ (of list (of list str))         tags
+  #^ (of dict str str)               extra)
 
 (defclass Server []
   (setv logger (getLogger "hproxy"))
@@ -30,14 +31,15 @@
           self.debug debug
           self.inb (AsyncINB.from-conf self.conf.inb)
           self.oubs (dfor #(tag oubs) (.items self.conf.oubs)
-                          tag (lfor oub oubs (AsyncOUB.from-conf oub)))
+                          tag (lfor oub oubs :if oub.enabled (AsyncOUB.from-conf oub)))
+          self.tags (dfor #(host tag) (reversed self.conf.tags) host tag)
           self.tasks (set)))
 
   (defn [cached-property] fallback-tag [self]
-    (get self.conf.tags "*"))
+    (get self.tags "*"))
 
   (defn match-tags [self host]
-    (let [tag (.get self.conf.tags host)]
+    (let [tag (.get self.tags host)]
       (if tag
           tag
           (let [sp (.split host "." 1)]
