@@ -2,6 +2,7 @@
   hiolib.rule :readers * *)
 
 (import
+  asyncio
   argparse
   json
   concurrent.futures [ThreadPoolExecutor]
