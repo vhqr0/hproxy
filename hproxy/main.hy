@@ -8,6 +8,7 @@
   concurrent.futures [ThreadPoolExecutor]
   hiolib.rule *
   hproxy.util *
+  hproxy.v2rayn *
   hproxy.server *)
 
 (defn do-run [conf debug]
@@ -53,6 +54,14 @@
       (else
         (print it.group it.name it.delay)))))
 
+(defn do-fetch [conf tag group debug]
+  (let [url (get conf.extra "fetchurls" group)
+        oubs (v2rayn-fetch group url debug)]
+    (for [oub (get conf.oubs tag)]
+      (unless (= oub.group group)
+        (.append oubs oub)))
+    (setv (get conf.oubs tag) oubs)))
+
 (defn main [[args None]]
   (let [args (parse-args [["-d" "--debug" :action "store_true" :default False]
                           ["-c" "--conf-file" :default "config.json"]
@@ -63,22 +72,27 @@
         conf-file args.conf-file
         conf (.model-validate ServerConf (with [f (open conf-file)] (json.load f)))]
     (ecase args.command
-           "run"  (do-run conf debug)
-           "dig4" (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
-                                          ["-u" "--url" :default (.get conf.extra "dig4url" "udp://8.8.8.8")]]
-                                         args.command-args)]
-                    (do-dig4 conf args.tag args.url)
-                    (with [f (open conf-file "w")] (json.dump (.dict conf) f)))
-           "dig6" (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
-                                          ["-u" "--url" :default (.get conf.extra "dig6url" "udp://2001:4860:4860::8888")]]
-                                         args.command-args)]
-                    (do-dig6 conf args.tag args.url debug)
-                    (with [f (open conf-file "w")] (json.dump (.dict conf) f)))
-           "ping" (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
-                                          ["-u" "--url" :default (.get conf.extra "pingurl" "http://www.google.com")]]
-                                         args.command-args)]
-                    (do-ping conf args.tag args.url debug)
-                    (with [f (open conf-file "w")] (json.dump (.dict conf) f))))))
+           "run"   (do-run conf debug)
+           "dig4"  (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
+                                           ["-u" "--url" :default (.get conf.extra "dig4url" "udp://8.8.8.8")]]
+                                          args.command-args)]
+                     (do-dig4 conf args.tag args.url)
+                     (with [f (open conf-file "w")] (json.dump (.dict conf) f)))
+           "dig6"  (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
+                                           ["-u" "--url" :default (.get conf.extra "dig6url" "udp://2001:4860:4860::8888")]]
+                                          args.command-args)]
+                     (do-dig6 conf args.tag args.url debug)
+                     (with [f (open conf-file "w")] (json.dump (.dict conf) f)))
+           "ping"  (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
+                                           ["-u" "--url" :default (.get conf.extra "pingurl" "http://www.google.com")]]
+                                          args.command-args)]
+                     (do-ping conf args.tag args.url debug)
+                     (with [f (open conf-file "w")] (json.dump (.dict conf) f)))
+           "fetch" (let [args (parse-args [["-t" "--tag" :default (.get conf.extra "managedtag" "forward")]
+                                           ["group"]]
+                                          args.command-args)]
+                     (do-fetch conf args.tag args.group debug)
+                     (with [f (open conf-file "w")] (json.dump (.dict conf) f))))))
 
 (export
   :objects [main])

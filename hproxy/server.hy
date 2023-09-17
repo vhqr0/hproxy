@@ -5,7 +5,7 @@
   asyncio
   random [choice]
   logging [getLogger]
-  typing [Union]
+  typing [Any]
   functools [cache cached-property]
   pydantic [BaseModel]
   hiolib.stream *
@@ -21,7 +21,7 @@
   #^ INBConf                         inb
   #^ (of dict str (of list OUBConf)) oubs
   #^ (of list (of list str))         tags
-  #^ (of dict str str)               extra)
+  #^ (of dict str Any)               extra)
 
 (defclass Server []
   (setv logger (getLogger "hproxy"))
