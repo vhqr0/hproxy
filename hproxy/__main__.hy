@@ -3,7 +3,7 @@
 
 (import
   logging
-  hproxy.vmess *
+  hproxy.v2ray *
   hproxy.main *)
 
 (defmain []

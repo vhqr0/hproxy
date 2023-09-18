@@ -22,6 +22,9 @@
     (when (and (is-not cls.scheme None) (is-not cls.scheme-dict None))
       (setv (get cls.scheme-dict cls.scheme) cls)))
 
+  (defn #-- init [self conf]
+    (setv self.conf conf))
+
   (defn [classmethod] from-conf [cls conf]
     ((get cls.scheme-dict conf.scheme) conf)))
 
@@ -50,9 +53,6 @@
 (async-defclass OUB [SchemeDispatcher]
   (setv scheme-dict (dict)
         connector-class None)
-
-  (defn #-- init [self conf]
-    (setv self.conf conf))
 
   (defn [cached-property] tls-ctx [self]
     (when self.conf.tls
@@ -106,9 +106,6 @@
   (setv scheme-dict (dict)
         acceptor-class None)
 
-  (defn #-- init [self conf]
-    (setv self.conf conf))
-
   (defn [cached-property] tls-ctx [self]
     (when self.conf.tls
       (doto (ssl.create-default-context ssl.Purpose.CLIENT_AUTH)
@@ -138,6 +135,18 @@
     (let [acceptor (.get-acceptor self)
           stream (async-wait (.accept acceptor lowest-stream))]
       #(stream acceptor.host acceptor.port))))
+
+(defclass SUBConf [BaseModel]
+  #^ str               group
+  #^ str               scheme
+  #^ str               url
+  #^ (of dict str Any) extra)
+
+(defclass SUB [SchemeDispatcher]
+  (setv scheme-dict (dict))
+
+  (defn fetch [self]
+    (raise NotImplementedError)))
 
 (async-defclass BlockOUB [(async-name OUB)]
   (setv scheme "block")
@@ -191,4 +200,4 @@
         acceptor-class (async-name AutoAcceptor)))
 
 (export
-  :objects [OUBConf OUB AsyncOUB INBConf INB AsyncINB])
+  :objects [OUBConf OUB AsyncOUB INBConf INB AsyncINB SUBConf SUB])

@@ -23,7 +23,7 @@
                  (dns.message.make-query conf.dnsname rdtype)
                 :where url.hostname
                 :port (or url.port 53)
-                :timeout 1.0)
+                :timeout 3.0)
           ans (lfor a resp.answer :if (= a.rdtype rdtype) a)]
       (setv conf.host (.to-text (choice (list (.keys (. (choice ans) items)))))))))
 
@@ -43,7 +43,7 @@
                         (with/a [stream (await (.connect oub :host url.hostname :port (or url.port 80) :head head))]
                           (await (.unpack-from-stream AsyncHTTPResp stream))))))
       (defn/a ping-with-timeout-func []
-        (await (asyncio.wait-for (ping-func) :timeout 1.0)))
+        (await (asyncio.wait-for (ping-func) :timeout 3.0)))
       (setv conf.delay
             (timeit (fn [] (asyncio.run (ping-with-timeout-func))) :number 1)
             conf.enabled True))))

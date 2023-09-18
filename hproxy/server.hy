@@ -3,12 +3,14 @@
 
 (import
   asyncio
+  traceback
   random [choice]
   logging [getLogger]
   typing [Any]
   functools [cache cached-property]
   pydantic [BaseModel]
   hiolib.stream *
+  hproxy
   hproxy.iob *)
 
 (defn/a stream-copy [from-stream to-stream]
@@ -20,18 +22,20 @@
 (defclass ServerConf [BaseModel]
   #^ INBConf                         inb
   #^ (of dict str (of list OUBConf)) oubs
+  #^ (of dict str (of list SUBConf)) subs
   #^ (of list (of list str))         tags
   #^ (of dict str Any)               extra)
 
 (defclass Server []
   (setv logger (getLogger "hproxy"))
 
-  (defn #-- init [self conf [debug False]]
+  (defn #-- init [self conf]
     (setv self.conf conf
-          self.debug debug
           self.inb (AsyncINB.from-conf self.conf.inb)
           self.oubs (dfor #(tag oubs) (.items self.conf.oubs)
                           tag (lfor oub oubs :if oub.enabled (AsyncOUB.from-conf oub)))
+          self.subs (dfor #(tag subs) (.items self.conf.subs)
+                          tag (lfor sub subs (SUB.from-conf sub)))
           self.tags (dfor #(host tag) (reversed self.conf.tags) host tag)
           self.tasks (set)))
 
@@ -59,7 +63,9 @@
           (raise StreamEOFError))
         (except [e Exception]
           (.info self.logger "except while accepting: %s" e)
-          (if self.debug (raise) (return))))
+          (when hproxy.debug
+            (print (traceback.format-exc)))
+          (return)))
       (setv oub (.choice-oub self host))
       (.info self.logger "connect to %s %d via %s" host port oub.conf.name)
       (try
@@ -67,7 +73,9 @@
         (except [e Exception]
           (.info self.logger "except while connecting to %s %d via %s: %s"
                  host port oub.conf.name e)
-          (if self.debug (raise) (return))))
+          (when hproxy.debug
+            (print (traceback.format-exc)))
+          (return)))
       (with/a [_ oub-stream]
         (let [tasks #((asyncio.create-task (stream-copy inb-stream oub-stream))
                        (asyncio.create-task (stream-copy oub-stream inb-stream)))]
@@ -86,7 +94,9 @@
         (await (.serve-forever server)))
       (except [e Exception]
         (.info self.logger "except while serving: %s" e)
-        (if self.debug (raise) (return))))))
+        (when hproxy.debug
+          (print (traceback.format-exc)))
+        (return)))))
 
 (export
   :objects [ServerConf Server])
