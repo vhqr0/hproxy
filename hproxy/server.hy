@@ -39,7 +39,7 @@
           self.tags (dfor #(host tag) (reversed self.conf.tags) host tag)
           self.tasks (set)))
 
-  (defn [cached-property] fallback-tag [self]
+  (defn [cached-property] default-tag [self]
     (get self.tags "*"))
 
   (defn match-tags [self host]
@@ -49,7 +49,7 @@
           (let [sp (.split host "." 1)]
             (if (= (len sp) 2)
                 (.match-tags self (get sp 1))
-                self.fallback-tag)))))
+                self.default-tag)))))
 
   (defn choice-oub [self host]
     (choice (get self.oubs (.match-tags self host))))
