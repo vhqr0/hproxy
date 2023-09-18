@@ -95,8 +95,19 @@
       (except [e Exception]
         (.info self.logger "except while serving: %s" e)
         (when hproxy.debug
-          (print (traceback.format-exc)))
-        (return)))))
+          (print (traceback.format-exc))))))
+
+  (defn fetch-subs [self tag]
+    (let [oubs (list)]
+      (for [sub (get self.subs tag)]
+        (try
+          (for [oub (.fetch sub)]
+            (.append oubs oub))
+          (except [e Exception]
+            (.info self.logger "except while fetching: %s" e)
+            (when hproxy.debug
+              (print (traceback.format-exc))))))
+      oubs)))
 
 (export
   :objects [ServerConf Server])
