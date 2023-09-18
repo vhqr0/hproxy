@@ -39,6 +39,10 @@
           self.tags (dfor #(host tag) (reversed self.conf.tags) host tag)
           self.tasks (set)))
 
+  (defn add-task [self task]
+    (.add self.tasks task)
+    (.add-done-callback task self.tasks.discard))
+
   (defn [cached-property] default-tag [self]
     (get self.tags "*"))
 
@@ -55,6 +59,7 @@
     (choice (get self.oubs (.match-tags self host))))
 
   (defn/a serve-callback [self lowest-stream]
+    (.add-task self (asyncio.current-task))
     (with/a [_ lowest-stream]
       (try
         (setv #(inb-stream host port) (await (.accept self.inb lowest-stream))
@@ -80,8 +85,7 @@
         (let [tasks #((asyncio.create-task (stream-copy inb-stream oub-stream))
                        (asyncio.create-task (stream-copy oub-stream inb-stream)))]
           (ap-each tasks
-                   (.add self.tasks it)
-                   (.add-done-callback it self.tasks.discard))
+                   (.add-task self it))
           (try
             (await (asyncio.gather #* tasks))
             (except [Exception]))
