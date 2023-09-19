@@ -12,5 +12,5 @@
   :version version
   :install-requires requires
   :author "vhqr"
-  :description "a simple porxy based on hiolib"
+  :description "a simple proxy based on hiolib"
   :packages (#/ setuptools.find-packages))
