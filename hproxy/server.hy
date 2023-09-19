@@ -23,7 +23,7 @@
   #^ INBConf                         inb
   #^ (of dict str (of list OUBConf)) oubs
   #^ (of dict str (of list SUBConf)) subs
-  #^ (of list (of list str))         tags
+  #^ (of dict str str)               tags
   #^ (of dict str Any)               extra)
 
 (defclass Server []
@@ -36,7 +36,6 @@
                           tag (lfor oub oubs :if oub.enabled (AsyncOUB.from-conf oub)))
           self.subs (dfor #(tag subs) (.items self.conf.subs)
                           tag (lfor sub subs (SUB.from-conf sub)))
-          self.tags (dfor #(host tag) (reversed self.conf.tags) host tag)
           self.tasks (set)))
 
   (defn add-task [self task]
@@ -44,10 +43,10 @@
     (.add-done-callback task self.tasks.discard))
 
   (defn [cached-property] default-tag [self]
-    (get self.tags "*"))
+    (get self.conf.tags "*"))
 
   (defn match-tags [self host]
-    (let [tag (.get self.tags host)]
+    (let [tag (.get self.conf.tags host)]
       (if tag
           tag
           (let [sp (.split host "." 1)]

@@ -1,0 +1,38 @@
+inb:
+  scheme: auto
+  host: localhost
+  port: 1080
+  tls: null
+  ws: null
+  extra: {}
+oubs:
+  block:
+  - managed: false
+    enabled: true
+    name: block
+    group: block
+    dnsname: ''
+    delay: 0.0
+    scheme: block
+    host: ''
+    port: 0
+    tls: null
+    ws: null
+    extra: {}
+  direct:
+  - managed: false
+    enabled: true
+    name: direct
+    group: direct
+    dnsname: ''
+    delay: 0.0
+    scheme: direct
+    host: ''
+    port: 0
+    tls: null
+    ws: null
+    extra: {}
+subs: {}
+tags:
+  '*': direct
+extra: {}

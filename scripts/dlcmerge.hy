@@ -8,7 +8,7 @@
   hyrule *
   os.path
   re
-  json)
+  yaml)
 
 (setv tags-dict {"ads" "block" "cn" "direct" "!cn" "forward"})
 
@@ -22,16 +22,16 @@
               arg (get line-match 3)
               tag (get tags-dict (or (get line-match 5) default-tag))]
           (cond (in command #("domain" "full"))
-                (.append tags [arg tag])
+                (setv (get tags arg) tag)
                 (= command "include")
                 (load data-path arg default-tag tags)))))))
 
 (defmain []
   (let [args (parse-args [["-d" "--data-path"
                            :default (os.path.join "domain-list-community" "data")]
-                          ["-o" "--output-path" :default "tags.json"]])
-        tags (list)]
+                          ["-o" "--output-path" :default "tags.yaml"]])
+        tags {"*" "direct"}]
     (load args.data-path "cn" "cn" tags)
     (load args.data-path "geolocation-!cn" "!cn" tags)
     (with [f (open args.output-path "w")]
-      (json.dump tags f))))
+      (yaml.dump {"tags" tags} f :Dumper yaml.CDumper :sort-keys False))))

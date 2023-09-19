@@ -1,0 +1,25 @@
+inb:
+  scheme: http
+  host: localhost
+  port: 4433
+  tls: null
+  ws: {}
+  extra: {}
+oubs:
+  direct:
+  - managed: false
+    enabled: true
+    name: direct
+    group: direct
+    dnsname: ''
+    delay: 0.0
+    scheme: direct
+    host: ''
+    port: 0
+    tls: null
+    ws: null
+    extra: {}
+subs: {}
+tags:
+  '*': direct
+extra: {}

@@ -4,11 +4,11 @@
 (import
   asyncio
   argparse
-  json
   random [choice]
   timeit [timeit]
   urllib.parse [urlparse]
   concurrent.futures [ThreadPoolExecutor]
+  yaml
   dns.resolver
   dns.query
   dns.message
@@ -23,7 +23,7 @@
   (setv command-dict (dict))
 
   (setv args-spec [["-d" "--debug" :action "store_true" :default False]
-                   ["-c" "--conf-path" :default "config.json"]
+                   ["-c" "--conf-path" :default "config.yaml"]
                    ["command"]
                    ["command_args" :nargs argparse.REMAINDER]])
 
@@ -52,10 +52,14 @@
     (.get self.conf.extra "managedtag" "forward"))
 
   (defn load [self]
-    (setv self.conf (.model-validate ServerConf (with [f (open self.path)] (json.load f)))))
+    (setv self.conf (.model-validate
+                      ServerConf
+                      (with [f (open self.path)]
+                        (yaml.load f :Loader yaml.CLoader)))))
 
   (defn save [self]
-    (with [f (open self.path "w")] (json.dump (.dict self.conf) f)))
+    (with [f (open self.path "w")]
+      (yaml.dump (.dict self.conf) f :Dumper yaml.CDumper :sort-keys False)))
 
   (defn run [self args]
     (raise NotImplementedError)))
