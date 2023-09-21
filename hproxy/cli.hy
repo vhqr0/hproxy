@@ -64,6 +64,14 @@
   (defn run [self args]
     (raise NotImplementedError)))
 
+(defclass Ls [Command]
+  (setv command "ls")
+
+  (defn run [self args]
+    (for [#(tag oubs) (.items self.conf.oubs)]
+      (for [oub oubs]
+        (print tag oub.group oub.name oub.enabled)))))
+
 (defclass Run [Command]
   (setv command "run")
 
