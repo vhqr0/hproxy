@@ -103,8 +103,8 @@
       (+ enc-blen enc-buf))))
 
 (async-defclass VmessStream [(async-name Stream)]
-  (defn #-- init [self write-encryptor read-decryptor #* args #** kwargs]
-    (#super-- init #* args #** kwargs)
+  (defn #-- init [self write-encryptor read-decryptor #** kwargs]
+    (#super-- init #** kwargs)
     (setv self.write-encryptor write-encryptor
           self.read-decryptor read-decryptor))
 
@@ -118,8 +118,8 @@
       (.decrypt self.read-decryptor enc-buf))))
 
 (async-defclass VmessConnector [(async-name ProxyConnector)]
-  (defn #-- init [self id #* args #** kwargs]
-    (#super-- init #* args #** kwargs)
+  (defn #-- init [self id #** kwargs]
+    (#super-- init #** kwargs)
     (setv self.id id
           self.key (randbytes 16)
           self.iv (randbytes 16)
