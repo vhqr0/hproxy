@@ -14,10 +14,13 @@
   dns.message
   dns.rdatatype
   hiolib.rule *
-  hiolib.util.ws *
   hproxy
-  hproxy.iob *
+  hproxy.http *
+  hproxy.base *
   hproxy.server *)
+
+
+;;; base
 
 (defclass Cli []
   (setv command-dict (dict))
@@ -30,8 +33,9 @@
   (defn run [self [args None]]
     (let [args (parse-args self.args-spec args)]
       (setv hproxy.debug args.debug)
-      (.run ((get self.command-dict args.command) :path args.conf-path)
-            (or args.command-args (list))))))
+      (let [command ((get self.command-dict args.command) :path args.conf-path)
+            command-args (parse-args command.args-spec args.command-args)]
+        (.run command command-args)))))
 
 (defclass Command []
   (setv command None)
@@ -48,8 +52,23 @@
   (defn [property] server [self]
     (Server self.conf))
 
+  (defn [property] extra [self]
+    (or self.conf.extra (dict)))
+
+  (defn [property] subs [self]
+    (dfor #(tag subs) (.items (get self.extra "subs"))
+          tag (lfor sub subs (SUB.from-conf (.model-validate SUBConf sub)))))
+
   (defn [property] managed-tag [self]
-    (.get self.conf.extra "managedtag" "forward"))
+    (.get self.extra "managedTag" "forward"))
+
+  (defn [property] dig-url [self]
+    (or (.get self.extra "digUrl")
+        (let [resolver (dns.resolver.get-default-resolver)]
+          (+ "udp://" (choice resolver.nameservers)))))
+
+  (defn [property] ping-url [self]
+    (.get self.extra "pingUrl" "http://www.google.com"))
 
   (defn load [self]
     (setv self.conf (.model-validate
@@ -61,8 +80,14 @@
     (with [f (open self.path "w")]
       (yaml.dump (.dict self.conf) f :Dumper yaml.CDumper :sort-keys False)))
 
+  (defn [property] args-spec [self]
+    (list))
+
   (defn run [self args]
     (raise NotImplementedError)))
+
+
+;;; ls
 
 (defclass Ls [Command]
   (setv command "ls")
@@ -70,7 +95,11 @@
   (defn run [self args]
     (for [#(tag oubs) (.items self.conf.oubs)]
       (for [oub oubs]
-        (print tag oub.group oub.name oub.enabled)))))
+        (hproxy.log-info "tag=%s,group=%s,name=%s,enabled=%s"
+                         tag oub.group oub.name oub.enabled)))))
+
+
+;;; run
 
 (defclass Run [Command]
   (setv command "run")
@@ -79,17 +108,34 @@
     (try
       (asyncio.run ((fn/a [] (await (.serve-forever self.server)))))
       (except [KeyboardInterrupt]
-        (print "keyboard quit")))))
+        (hproxy.log-info "keyboard quit")))))
+
+
+;;; fetch
 
 (defclass Fetch [Command]
   (setv command "fetch")
 
+  (defn [property] args-spec [self]
+    [["-t" "--tag" :default self.managed-tag]])
+
   (defn run [self args]
-    (let [args (parse-args [["-t" "--tag" :default self.managed-tag]]
-                           args)
-          oubs (.fetch-subs self.server args.tag)]
+    (let [oubs (list)]
+      (for [sub (get self.subs args.tag)]
+        (try
+          (for [oub (.fetch sub)]
+            (.append oubs oub))
+          (except [e Exception]
+            (hproxy.log-info "group=%s,url=%s,exc=[%s]%s"
+                             sub.conf.group sub.conf.url (type e) e)
+            (hproxy.print-exc))
+          (else
+            (hproxy.log-info "group=%s,url=%s" sub.conf.group sub.conf.url))))
       (setv (get self.conf.oubs args.tag) oubs))
     (.save self)))
+
+
+;;; for each base
 
 (defclass ForEachOubCommand [Command]
   (defn for-each-1 [self oub #* args]
@@ -101,41 +147,44 @@
             (fn [oub] (.for-each-1 self oub #* args))
             (gfor oub (get self.conf.oubs tag) :if oub.managed oub)))))
 
+
+;;; dig
+
 (defclass Dig [ForEachOubCommand]
   (setv rdtype None)
 
-  (defn [property] default-url [self]
-    (or (.get self.conf.extra "digurl")
-        (let [resolver (dns.resolver.get-default-resolver)]
-          (+ "udp://" (get resolver.nameservers 0)))))
+  (defn dig [self url name]
+    (let [url (urlparse url)
+          query-func (ecase url.scheme
+                            "udp"   dns.query.udp
+                            "tcp"   dns.query.tcp
+                            "tls"   dns.query.tls
+                            "https" dns.query.https)
+          req (dns.message.make-query name self.rdtype)
+          resp (query-func req :where url.hostname :port (or url.port 53) :timeout 3.0)
+          result (.resolve-chaining resp)]
+      (choice result.answer)))
 
   (defn for-each-1 [self oub url]
-    (setv oub.host "")
+    (setv oub.host ""
+          oub.enabled False)
     (when oub.dnsname
       (try
-        (let [url (urlparse url)
-              resp ((ecase url.scheme
-                           "udp" dns.query.udp
-                           "tcp" dns.query.tcp
-                           "tls" dns.query.tls)
-                     (dns.message.make-query oub.dnsname self.rdtype)
-                    :where url.hostname
-                    :port (or url.port 53)
-                    :timeout 3.0)
-              ans (lfor a resp.answer :if (= a.rdtype self.rdtype) a)]
-          (setv oub.host (.to-text (choice (list (.keys (. (choice ans) items)))))))
+        (setv oub.host (.to-text (.dig self url oub.dnsname)))
         (except [e Exception]
-          (print oub.group oub.name (type e) e)
-          (when hproxy.debug
-            (print (traceback.format-exc))))
+          (hproxy.log-info "group=%s,name=%s,exc=[%s]%s"
+                           oub.group oub.name (type e) e)
+          (hproxy.print-exc))
         (else
-          (print oub.group oub.name oub.host)))))
+          (hproxy.log-info "group=%s,name=%s,host=%s"
+                           oub.group oub.name oub.host)))))
+
+  (defn [property] args-spec [self]
+    [["-t" "--tag" :default self.managed-tag]
+     ["-u" "--url" :default self.dig-url]])
 
   (defn run [self args]
-    (let [args (parse-args [["-t" "--tag" :default self.managed-tag]
-                            ["-u" "--url" :default self.default-url]]
-                           args)]
-      (.for-each self args.tag #(args.url)))
+    (.for-each self args.tag #(args.url))
     (.save self)))
 
 (defclass Dig4 [Dig]
@@ -146,41 +195,50 @@
   (setv command "dig6"
         rdtype dns.rdatatype.AAAA))
 
+
+;;; ping
+
 (defclass Ping [ForEachOubCommand]
   (setv command "ping")
 
-  (defn [property] default-url [self]
-    (.get self.conf.extra "pingurl" "http://www.google.com"))
+  (defn/a aping [self url oub]
+    (let [url (urlparse url)]
+      (ecase url.scheme
+             "tcp"  (with/a [_ (await (.lowest-tcp-open-connection oub))])
+             "http" (with/a [stream (await (.connect oub
+                                                     :host url.hostname
+                                                     :port (or url.port 80)
+                                                     :head (.pack AsyncHTTPReq
+                                                                  "GET" (or url.path "/") "HTTP/1.1"
+                                                                  {"Host" url.hostname})))]
+                      (await (.unpack-from-stream AsyncHTTPResp stream))))))
+
+  (defn ping [self url oub]
+    (asyncio.run
+      ((fn/a []
+         (await (asyncio.wait-for (.aping self url oub) :timeout 3.0))))))
 
   (defn for-each-1 [self oub url]
     (setv oub.delay -1.0
           oub.enabled False)
     (when oub.host
       (try
-        (let [url (urlparse url)]
-          (defn/a tcp-ping []
-            (with/a [_ (await (.lowest-open-connection (AsyncOUB.from-conf oub)))]))
-          (defn/a http-ping []
-            (let [head (.pack AsyncHTTPReq "GET" (or url.path "/") "HTTP/1.1" {"Host" url.hostname})]
-              (with/a [stream (await (.connect (AsyncOUB.from-conf oub)
-                                               :host url.hostname :port (or url.port 80) :head head))]
-                (await (.unpack-from-stream AsyncHTTPResp stream)))))
-          (defn/a ping []
-            (await (asyncio.wait-for (ecase url.scheme "tcp" (tcp-ping) "http" (http-ping)) :timeout 3.0)))
-          (setv oub.delay (timeit (fn [] (asyncio.run (ping))) :number 1)
-                oub.enabled True))
+        (setv oub.delay (timeit (fn [] (.ping self url (AsyncOUB.from-conf oub))) :number 1)
+              oub.enabled True)
         (except [e Exception]
-          (print oub.group oub.name (type e) e)
-          (when hproxy.debug
-            (print (traceback.format-exc))))
+          (hproxy.log-info "group=%s,name=%s,exc=[%s]%s"
+                           oub.group oub.name (type e) e)
+          (hproxy.print-exc))
         (else
-          (print oub.group oub.name oub.delay)))))
+          (hproxy.log-info "group=%s,name=%s,delay=%s"
+                           oub.group oub.name oub.delay)))))
+
+  (defn [property] args-spec [self]
+    [["-t" "--tag" :default self.managed-tag]
+     ["-u" "--url" :default self.ping-url]])
 
   (defn run [self args]
-    (let [args (parse-args [["-t" "--tag" :default self.managed-tag]
-                            ["-u" "--url" :default self.default-url]]
-                           args)]
-      (.for-each self args.tag #(args.url)))
+    (.for-each self args.tag #(args.url))
     (.save self)))
 
 (export

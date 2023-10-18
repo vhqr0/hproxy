@@ -4,7 +4,7 @@ inb:
   port: 4433
   tls: null
   ws: {}
-  extra: {}
+  extra: null
 oubs:
   direct:
   - managed: false
@@ -18,8 +18,7 @@ oubs:
     port: 0
     tls: null
     ws: null
-    extra: {}
-subs: {}
+    extra: null
 tags:
   '*': direct
-extra: {}
+extra: null

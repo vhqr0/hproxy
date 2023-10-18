@@ -4,6 +4,7 @@
 (import
   logging
   hproxy.cli *
+  hproxy.basic *
   hproxy.v2ray *)
 
 (defmain []

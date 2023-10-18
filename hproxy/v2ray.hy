@@ -11,7 +11,6 @@
   time
   json
   base64
-  traceback
   random [randbytes getrandbits]
   functools [cached-property]
   uuid [UUID]
@@ -25,9 +24,11 @@
   requests
   hiolib.struct *
   hiolib.stream *
-  hiolib.util.proxy *
   hproxy
-  hproxy.iob *)
+  hproxy.base *)
+
+
+;;; vmess
 
 (defn fnv32a [buf]
   (let [r 0x811c9dc5
@@ -60,14 +61,15 @@
 (defclass VmessID [UUID]
   (setv magic b"c48619fe-8f02-49e0-b9e9-edf763e17e21")
 
-  (defn get-auth [self ts]
-    (.digest (HMAC :key self.bytes :msg ts :digestmod md5)))
-
   (defn [cached-property] req-key [self]
     (.digest (md5 (+ self.bytes self.magic))))
 
-  (defn [staticmethod] get-req-iv [ts]
-    (.digest (md5 (* 4 ts)))))
+  (defn get-req-param [self]
+    (let [ts (int-pack (int (time.time)) 8)
+          auth (.digest (HMAC :key self.bytes :msg ts :digestmod md5))
+          key self.req-key
+          iv (.digest (md5 (* 4 ts)))]
+      #(auth key iv))))
 
 (defclass VmessCryptor []
   (defn #-- init [self key iv [count 0]]
@@ -131,10 +133,7 @@
           self.read-decryptor (VmessCryptor :key self.rkey :iv self.riv)))
 
   (defn get-next-head-pre-head [self]
-    (let [ts (int-pack (int (time.time)) 8)
-          auth (.get-auth self.id ts)
-          key self.id.req-key
-          iv (.get-req-iv self.id ts)
+    (let [#(auth key iv) (.get-req-param self.id)
           req (.pack (async-name VmessReq)
                      :ver    1
                      :iv     self.iv
@@ -176,6 +175,9 @@
 
   (defn get-proxy-connector [self host port]
     ((async-name VmessConnector) :host host :port port :id self.id)))
+
+
+;;; v2rayn
 
 (defclass V2rayNSUB [SUB]
   (setv scheme "v2rayn")
@@ -221,13 +223,11 @@
       (for [url (.split (.decode (base64.decodebytes data)) "\r\n")]
         (when url
           (try
-            (when hproxy.debug
-              (print (.format "parse url: {}" url)))
+            (hproxy.log-debug "parse url: %s" url)
             (.append oubs (.parse-url self url))
             (except [e Exception]
-              (print (.format "except while parsing: {}" e))
-              (when hproxy.debug
-                (print (traceback.format-exc)))))))
+              (hproxy.log-info "except while parsing: %s" e)
+              (hproxy.print-exc)))))
       oubs))
 
   (defn fetch [self]

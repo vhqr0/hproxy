@@ -4,7 +4,7 @@ inb:
   port: 1080
   tls: null
   ws: null
-  extra: {}
+  extra: null
 oubs:
   direct:
   - managed: true
@@ -24,7 +24,6 @@ oubs:
       path: /
     extra:
       password: hello
-subs: {}
 tags:
   '*': direct
-extra: {}
+extra: null
