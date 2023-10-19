@@ -56,7 +56,7 @@
 (defstruct HTTPHeaders
   [[line headers
     :sep b"\r\n"
-    :repeat-until (not it)
+    :repeat-do-until (not it)
     :from (http-pack-headers it)
     :to (http-unpack-headers it)]])
 
