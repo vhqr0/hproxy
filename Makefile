@@ -9,4 +9,6 @@ build: compile
 .PHONY: clean
 clean:
 	rm -rf build dist hproxy.egg-info
-	hy -c "(do (import pathlib [Path]) (for [p (.rglob (Path \"hproxy\") \"*.py\")] (.unlink p)))"
+	hy -c "(do (import pathlib [Path] shutil [rmtree]) \
+(for [p (.rglob (Path \"hproxy\") \"*.py\")] (.unlink p)) \
+(for [p (.rglob (Path \"hproxy\") \"__pycache__\")] (rmtree p)))"
