@@ -153,7 +153,7 @@
 (defclass Dig [ForEachOubCommand]
   (setv rdtype None)
 
-  (defn dig [self url name]
+  (defn dig [self url name timeout]
     (let [url (urlparse url)
           query-func (ecase url.scheme
                             "udp"   dns.query.udp
@@ -161,16 +161,16 @@
                             "tls"   dns.query.tls
                             "https" dns.query.https)
           req (dns.message.make-query name self.rdtype)
-          resp (query-func req :where url.hostname :port (or url.port 53) :timeout 3.0)
+          resp (query-func req :where url.hostname :port (or url.port 53) :timeout timeout)
           result (.resolve-chaining resp)]
       (choice result.answer)))
 
-  (defn for-each-1 [self oub url]
+  (defn for-each-1 [self oub url timeout]
     (setv oub.host ""
           oub.enabled False)
     (when oub.dnsname
       (try
-        (setv oub.host (.to-text (.dig self url oub.dnsname)))
+        (setv oub.host (.to-text (.dig self url oub.dnsname timeout)))
         (except [e Exception]
           (hproxy.log-info "group=%s,name=%s,exc=[%s]%s"
                            oub.group oub.name (type e) e)
@@ -181,10 +181,11 @@
 
   (defn [property] args-spec [self]
     [["-t" "--tag" :default self.managed-tag]
-     ["-u" "--url" :default self.dig-url]])
+     ["-u" "--url" :default self.dig-url]
+     ["-T" "--timeout" :type float :default 3.0]])
 
   (defn run [self args]
-    (.for-each self args.tag #(args.url))
+    (.for-each self args.tag #(args.url args.timeout))
     (.save self)))
 
 (defclass Dig4 [Dig]
@@ -213,17 +214,17 @@
                                                                   {"Host" url.hostname})))]
                       (await (.unpack-from-stream AsyncHTTPResp stream))))))
 
-  (defn ping [self url oub]
+  (defn ping [self url oub timeout]
     (asyncio.run
       ((fn/a []
-         (await (asyncio.wait-for (.aping self url oub) :timeout 3.0))))))
+         (await (asyncio.wait-for (.aping self url oub) :timeout timeout))))))
 
-  (defn for-each-1 [self oub url]
+  (defn for-each-1 [self oub url timeout]
     (setv oub.delay -1.0
           oub.enabled False)
     (when oub.host
       (try
-        (setv oub.delay (timeit (fn [] (.ping self url (AsyncOUB.from-conf oub))) :number 1)
+        (setv oub.delay (timeit (fn [] (.ping self url (AsyncOUB.from-conf oub) timeout)) :number 1)
               oub.enabled True)
         (except [e Exception]
           (hproxy.log-info "group=%s,name=%s,exc=[%s]%s"
@@ -235,10 +236,11 @@
 
   (defn [property] args-spec [self]
     [["-t" "--tag" :default self.managed-tag]
-     ["-u" "--url" :default self.ping-url]])
+     ["-u" "--url" :default self.ping-url]
+     ["-T" "--timeout" :type float :default 3.0]])
 
   (defn run [self args]
-    (.for-each self args.tag #(args.url))
+    (.for-each self args.tag #(args.url args.timeout))
     (.save self)))
 
 (export
