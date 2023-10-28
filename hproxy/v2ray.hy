@@ -1,7 +1,7 @@
-;; site:                                 https://www.v2fly.org
+;; Homepage:                             https://www.v2fly.org
 ;; Legacy CN (outdated):                 https://github.com/v2fly/v2fly-github-io/blob/master/docs/developer/protocols/vmess.md
 ;; Legacy EN (outdated than the former): https://github.com/v2fly/v2fly-github-io/blob/master/docs/en_US/developer/protocols/vmess.md
-;; AEAD (incomplete):                    https://github.com/v2fly/v2fly-github-io/issues/20/
+;; AEAD CN (partial):                    https://github.com/v2fly/v2fly-github-io/issues/20/
 ;; V2rayN:                               https://github.com/2dust/v2rayN/wiki/分享链接格式说明(ver-2)
 
 (require
@@ -35,6 +35,18 @@
 
 ;;; vmess
 
+(setv VMESS-MAGIC        b"c48619fe-8f02-49e0-b9e9-edf763e17e21"
+      VMESS-KDF          b"VMess AEAD KDF"
+      VMESS-AID          b"AES Auth ID Encryption"
+      VMESS-REQ-LEN-KEY  b"VMess Header AEAD Key_Length"
+      VMESS-REQ-LEN-IV   b"VMess Header AEAD Nonce_Length"
+      VMESS-REQ-KEY      b"VMess Header AEAD Key"
+      VMESS-REQ-IV       b"VMess Header AEAD Nonce"
+      VMESS-RESP-LEN-KEY b"AEAD Resp Header Len Key"
+      VMESS-RESP-LEN-IV  b"AEAD Resp Header Len IV"
+      VMESS-RESP-KEY     b"AEAD Resp Header Key"
+      VMESS-RESP-IV      b"AEAD Resp Header IV")
+
 (defn hmac2hash [key block-size digest-size hash-func]
   (when (> (len key) block-size)
     (setv key (hash-func key)))
@@ -51,18 +63,7 @@
        (hash-func
          (+ okey (hash-func (+ ikey data)))))))
 
-(setv vmess-kdf-path          b"VMess AEAD KDF"
-      vmess-aid-path          b"AES Auth ID Encryption"
-      vmess-req-len-key-path  b"VMess Header AEAD Key_Length"
-      vmess-req-len-iv-path   b"VMess Header AEAD Nonce_Length"
-      vmess-req-key-path      b"VMess Header AEAD Key"
-      vmess-req-iv-path       b"VMess Header AEAD Nonce"
-      vmess-resp-len-key-path b"AEAD Resp Header Len Key"
-      vmess-resp-len-iv-path  b"AEAD Resp Header Len IV"
-      vmess-resp-key-path     b"AEAD Resp Header Key"
-      vmess-resp-iv-path      b"AEAD Resp Header IV")
-
-(let [okdf-1 (hmac2hash vmess-kdf-path 64 32 (fn [data] (.digest (sha256 data))))]
+(let [okdf-1 (hmac2hash VMESS-KDF 64 32 (fn [data] (.digest (sha256 data))))]
   (defn vmess-kdf [key #* path]
     (let [okdf okdf-1]
       (for [p path]
@@ -98,16 +99,11 @@
    [int mlen :len 1 :to-validate (= it 0)]])
 
 (defclass VmessID [UUID]
-  (setv magic b"c48619fe-8f02-49e0-b9e9-edf763e17e21")
-
   (defn [cached-property] cmd-key [self]
-    (.digest (md5 (+ self.bytes self.magic))))
-
-  (defn kdf [self #* path]
-    (vmess-kdf self.cmd-key #* path))
+    (.digest (md5 (+ self.bytes VMESS-MAGIC))))
 
   (defn [cached-property] aid-key [self]
-    (cut (.kdf self vmess-aid-path) 16))
+    (cut (vmess-kdf self.cmd-key VMESS-AID) 16))
 
   ;;; legacy
   ;; (defn encrypt-req [self req]
@@ -126,10 +122,10 @@
                    (.encryptor)
                    (.update aid))
           nonce (randbytes 8)
-          elen (-> (AESGCM (cut (.kdf self vmess-req-len-key-path eaid nonce) 16))
-                   (.encrypt (cut (.kdf self vmess-req-len-iv-path eaid nonce) 12) (int-pack (len req) 2) eaid))
-          ereq (-> (AESGCM (cut (.kdf self vmess-req-key-path eaid nonce) 16))
-                   (.encrypt (cut (.kdf self vmess-req-iv-path eaid nonce) 12) req eaid))]
+          elen (-> (AESGCM (cut (vmess-kdf self.cmd-key VMESS-REQ-LEN-KEY eaid nonce) 16))
+                   (.encrypt (cut (vmess-kdf self.cmd-key VMESS-REQ-LEN-IV eaid nonce) 12) (int-pack (len req) 2) eaid))
+          ereq (-> (AESGCM (cut (vmess-kdf self.cmd-key VMESS-REQ-KEY eaid nonce) 16))
+                   (.encrypt (cut (vmess-kdf self.cmd-key VMESS-REQ-IV eaid nonce) 12) req eaid))]
       (+ eaid elen nonce ereq))))
 
 (defclass VmessCryptor []
@@ -232,11 +228,11 @@
 
   (async-defn connect1 [self next-stream]
     (let [elen (async-wait (.read-exactly next-stream 18))
-          rlen (int-unpack (-> (AESGCM (cut (vmess-kdf self.rkey vmess-resp-len-key-path) 16))
-                               (.decrypt (cut (vmess-kdf self.riv vmess-resp-len-iv-path) 12) elen None)))
+          rlen (int-unpack (-> (AESGCM (cut (vmess-kdf self.rkey VMESS-RESP-LEN-KEY) 16))
+                               (.decrypt (cut (vmess-kdf self.riv VMESS-RESP-LEN-IV) 12) elen None)))
           eresp (async-wait (.read-exactly next-stream (+ 16 rlen)))
-          resp (-> (AESGCM (cut (vmess-kdf self.rkey vmess-resp-key-path) 16))
-                   (.decrypt (cut (vmess-kdf self.riv vmess-resp-iv-path) 12) eresp None))
+          resp (-> (AESGCM (cut (vmess-kdf self.rkey VMESS-RESP-KEY) 16))
+                   (.decrypt (cut (vmess-kdf self.riv VMESS-RESP-IV) 12) eresp None))
           #(v _ _ _) (.unpack VmessResp resp)]
       (unless (= v self.v)
         (raise StructValidationError))
