@@ -15,25 +15,26 @@
   random [randbytes getrandbits]
   functools [cached-property]
   uuid [UUID]
-  hmac [HMAC]
   zlib [crc32]
   hashlib [md5 sha256]
   urllib.parse :as urlparse
   Crypto.Hash.SHAKE128 [SHAKE128-XOF]
   cryptography.hazmat.primitives.ciphers [Cipher]
   cryptography.hazmat.primitives.ciphers.algorithms [AES]
-  ;;; legacy
-  ;; cryptography.hazmat.primitives.ciphers.modes [CFB]
   cryptography.hazmat.primitives.ciphers.modes [ECB]
   cryptography.hazmat.primitives.ciphers.aead [AESGCM]
   requests
   hiolib.struct *
   hiolib.stream *
   hproxy
-  hproxy.base *)
+  hproxy.base *
+
+  ;;; legacy
+  ;; hmac [HMAC]
+  ;; cryptography.hazmat.primitives.ciphers.modes [CFB]
+  )
 
 
-;;; vmess
 
 (setv VMESS-MAGIC        b"c48619fe-8f02-49e0-b9e9-edf763e17e21"
       VMESS-KDF          b"VMess AEAD KDF"
@@ -77,6 +78,9 @@
     (for [c buf]
       (setv r (& (* (^ c r) p) m)))
     (int-pack r 4)))
+
+
+;;; vmess
 
 (defstruct VmessReq
   [[int ver :len 1]
@@ -216,8 +220,9 @@
   ;;; legacy
   ;; (async-defn connect1 [self next-stream]
   ;;   (let [eresp (async-wait (.read-exactly next-stream 4))
-  ;;         decryptor (.decryptor (Cipher (AES self.rkey) (CFB self.riv)))
-  ;;         resp (.update decryptor eresp)
+  ;;         resp (-> (Cipher (AES self.rkey) (CFB self.riv))
+  ;;                  (.decryptor)
+  ;;                  (.update eresp))
   ;;         #(v _ _ _) (.unpack VmessResp resp)]
   ;;     (unless (= v self.v)
   ;;       (raise StructValidationError))
