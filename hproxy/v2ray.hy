@@ -1,7 +1,8 @@
-;; site:          https://www.v2fly.org
-;; CN:            https://github.com/v2fly/v2fly-github-io/blob/master/docs/developer/protocols/vmess.md
-;; EN (outdated): https://github.com/v2fly/v2fly-github-io/blob/master/docs/en_US/developer/protocols/vmess.md
-;; V2rayN:        https://github.com/2dust/v2rayN/wiki/分享链接格式说明(ver-2)
+;; site:                                 https://www.v2fly.org
+;; Legacy CN (outdated):                 https://github.com/v2fly/v2fly-github-io/blob/master/docs/developer/protocols/vmess.md
+;; Legacy EN (outdated than the former): https://github.com/v2fly/v2fly-github-io/blob/master/docs/en_US/developer/protocols/vmess.md
+;; AEAD (incomplete):                    https://github.com/v2fly/v2fly-github-io/issues/20/
+;; V2rayN:                               https://github.com/2dust/v2rayN/wiki/分享链接格式说明(ver-2)
 
 (require
   hiolib.rule :readers * *
@@ -15,11 +16,15 @@
   functools [cached-property]
   uuid [UUID]
   hmac [HMAC]
-  hashlib [md5]
+  zlib [crc32]
+  hashlib [md5 sha256]
+  urllib.parse :as urlparse
   Crypto.Hash.SHAKE128 [SHAKE128-XOF]
   cryptography.hazmat.primitives.ciphers [Cipher]
   cryptography.hazmat.primitives.ciphers.algorithms [AES]
-  cryptography.hazmat.primitives.ciphers.modes [CFB]
+  ;;; legacy
+  ;; cryptography.hazmat.primitives.ciphers.modes [CFB]
+  cryptography.hazmat.primitives.ciphers.modes [ECB]
   cryptography.hazmat.primitives.ciphers.aead [AESGCM]
   requests
   hiolib.struct *
@@ -30,7 +35,41 @@
 
 ;;; vmess
 
-(defn fnv32a [buf]
+(defn hmac2hash [key block-size digest-size hash-func]
+  (when (> (len key) block-size)
+    (setv key (hash-func key)))
+  (setv ikey (lfor _ (range block-size) 0x36)
+        okey (lfor _ (range block-size) 0x5c))
+  (for [#(i c) (enumerate key)]
+    (^= (get ikey i) c)
+    (^= (get okey i) c))
+  (setv ikey (bytes ikey)
+        okey (bytes okey))
+  #(block-size
+     digest-size
+     (fn [data]
+       (hash-func
+         (+ okey (hash-func (+ ikey data)))))))
+
+(setv vmess-kdf-path          b"VMess AEAD KDF"
+      vmess-aid-path          b"AES Auth ID Encryption"
+      vmess-req-len-key-path  b"VMess Header AEAD Key_Length"
+      vmess-req-len-iv-path   b"VMess Header AEAD Nonce_Length"
+      vmess-req-key-path      b"VMess Header AEAD Key"
+      vmess-req-iv-path       b"VMess Header AEAD Nonce"
+      vmess-resp-len-key-path b"AEAD Resp Header Len Key"
+      vmess-resp-len-iv-path  b"AEAD Resp Header Len IV"
+      vmess-resp-key-path     b"AEAD Resp Header Key"
+      vmess-resp-iv-path      b"AEAD Resp Header IV")
+
+(let [okdf-1 (hmac2hash vmess-kdf-path 64 32 (fn [data] (.digest (sha256 data))))]
+  (defn vmess-kdf [key #* path]
+    (let [okdf okdf-1]
+      (for [p path]
+        (setv okdf (hmac2hash p #* okdf)))
+      ((get okdf 2) key))))
+
+(defn fnv1a [buf]
   (let [r 0x811c9dc5
         p 0x01000193
         m 0xffffffff]
@@ -61,15 +100,37 @@
 (defclass VmessID [UUID]
   (setv magic b"c48619fe-8f02-49e0-b9e9-edf763e17e21")
 
-  (defn [cached-property] req-key [self]
+  (defn [cached-property] cmd-key [self]
     (.digest (md5 (+ self.bytes self.magic))))
 
-  (defn get-req-param [self]
-    (let [ts (int-pack (int (time.time)) 8)
-          auth (.digest (HMAC :key self.bytes :msg ts :digestmod md5))
-          key self.req-key
-          iv (.digest (md5 (* 4 ts)))]
-      #(auth key iv))))
+  (defn kdf [self #* path]
+    (vmess-kdf self.cmd-key #* path))
+
+  (defn [cached-property] aid-key [self]
+    (cut (.kdf self vmess-aid-path) 16))
+
+  ;;; legacy
+  ;; (defn encrypt-req [self req]
+  ;;   (let [ts (int-pack (int (time.time)) 8)
+  ;;         auth (.digest (HMAC :key self.bytes :msg ts :digestmod md5))
+  ;;         iv (.digest (md5 (* 4 ts)))
+  ;;         ereq (-> (Cipher (AES self.cmd-key) (CFB iv))
+  ;;                  (.encryptor)
+  ;;                  (.update req))]
+  ;;     (+ auth ereq)))
+
+  (defn encrypt-req [self req]
+    (let [aid (+ (int-pack (int (time.time)) 8) (randbytes 4))
+          aid (+ aid (int-pack (crc32 aid) 4))
+          eaid (-> (Cipher (AES self.aid-key) (ECB))
+                   (.encryptor)
+                   (.update aid))
+          nonce (randbytes 8)
+          elen (-> (AESGCM (cut (.kdf self vmess-req-len-key-path eaid nonce) 16))
+                   (.encrypt (cut (.kdf self vmess-req-len-iv-path eaid nonce) 12) (int-pack (len req) 2) eaid))
+          ereq (-> (AESGCM (cut (.kdf self vmess-req-key-path eaid nonce) 16))
+                   (.encrypt (cut (.kdf self vmess-req-iv-path eaid nonce) 12) req eaid))]
+      (+ eaid elen nonce ereq))))
 
 (defclass VmessCryptor []
   (defn #-- init [self key iv [count 0]]
@@ -90,8 +151,8 @@
   (defn encrypt-len [self blen]
     (int-pack (.mask-len self blen) 2))
 
-  (defn decrypt-len [self enc-blen]
-    (.mask-len self (int-unpack enc-blen)))
+  (defn decrypt-len [self eblen]
+    (.mask-len self (int-unpack eblen)))
 
   (defn encrypt [self buf]
     (.encrypt self.aead (.next-iv self) buf b""))
@@ -100,9 +161,9 @@
     (.decrypt self.aead (.next-iv self) buf b""))
 
   (defn encrypt-with-len [self buf]
-    (let [enc-buf (.encrypt self buf)
-          enc-blen (.encrypt-len self (len enc-buf))]
-      (+ enc-blen enc-buf))))
+    (let [ebuf (.encrypt self buf)
+          eblen (.encrypt-len self (len ebuf))]
+      (+ eblen ebuf))))
 
 (async-defclass VmessStream [(async-name Stream)]
   (defn #-- init [self write-encryptor read-decryptor #** kwargs]
@@ -114,10 +175,10 @@
     (async-wait (.write self.next-layer (.encrypt-with-len self.write-encryptor buf))))
 
   (async-defn read1 [self]
-    (let [enc-blen (async-wait (.read-exactly self.next-layer 2))
-          blen (.decrypt-len self.read-decryptor enc-blen)
-          enc-buf (async-wait (.read-exactly self.next-layer blen))]
-      (.decrypt self.read-decryptor enc-buf))))
+    (let [eblen (async-wait (.read-exactly self.next-layer 2))
+          blen (.decrypt-len self.read-decryptor eblen)
+          ebuf (async-wait (.read-exactly self.next-layer blen))]
+      (.decrypt self.read-decryptor ebuf))))
 
 (async-defclass VmessConnector [(async-name ProxyConnector)]
   (defn #-- init [self id #** kwargs]
@@ -125,16 +186,18 @@
     (setv self.id id
           self.key (randbytes 16)
           self.iv (randbytes 16)
-          self.rkey (.digest (md5 self.key))
-          self.riv (.digest (md5 self.iv))
+          ;;; legacy
+          ;; self.rkey (.digest (md5 self.key))
+          ;; self.riv (.digest (md5 self.iv))
+          self.rkey (cut (.digest (sha256 self.key)) 16)
+          self.riv (cut (.digest (sha256 self.iv)) 16)
           self.v (getrandbits 8)
           self.pad (randbytes (getrandbits 4))
           self.write-encryptor (VmessCryptor :key self.key :iv self.iv)
           self.read-decryptor (VmessCryptor :key self.rkey :iv self.riv)))
 
   (defn get-next-head-pre-head [self]
-    (let [#(auth key iv) (.get-req-param self.id)
-          req (.pack (async-name VmessReq)
+    (let [req (.pack (async-name VmessReq)
                      :ver    1
                      :iv     self.iv
                      :key    self.key
@@ -148,17 +211,32 @@
                      :atype  2  ; DomainName
                      :host   self.host
                      :pad    self.pad)
-          encryptor (.encryptor (Cipher (AES key) (CFB iv)))
-          enc-req (.update encryptor (+ req (fnv32a req)))]
-      (+ auth enc-req)))
+          req (+ req (fnv1a req))]
+      (.encrypt-req self.id req)))
 
   (defn get-next-head-pre-frame [self head]
     (.encrypt-with-len self.write-encryptor head))
 
+  ;;; legacy
+  ;; (async-defn connect1 [self next-stream]
+  ;;   (let [eresp (async-wait (.read-exactly next-stream 4))
+  ;;         decryptor (.decryptor (Cipher (AES self.rkey) (CFB self.riv)))
+  ;;         resp (.update decryptor eresp)
+  ;;         #(v _ _ _) (.unpack VmessResp resp)]
+  ;;     (unless (= v self.v)
+  ;;       (raise StructValidationError))
+  ;;     ((async-name VmessStream)
+  ;;       :write-encryptor self.write-encryptor
+  ;;       :read-decryptor self.read-decryptor
+  ;;       :next-layer next-stream)))
+
   (async-defn connect1 [self next-stream]
-    (let [enc-resp (async-wait (.read-exactly next-stream 4))
-          decryptor (.decryptor (Cipher (AES self.rkey) (CFB self.riv)))
-          resp (.update decryptor enc-resp)
+    (let [elen (async-wait (.read-exactly next-stream 18))
+          rlen (int-unpack (-> (AESGCM (cut (vmess-kdf self.rkey vmess-resp-len-key-path) 16))
+                               (.decrypt (cut (vmess-kdf self.riv vmess-resp-len-iv-path) 12) elen None)))
+          eresp (async-wait (.read-exactly next-stream (+ 16 rlen)))
+          resp (-> (AESGCM (cut (vmess-kdf self.rkey vmess-resp-key-path) 16))
+                   (.decrypt (cut (vmess-kdf self.riv vmess-resp-iv-path) 12) eresp None))
           #(v _ _ _) (.unpack VmessResp resp)]
       (unless (= v self.v)
         (raise StructValidationError))
@@ -182,41 +260,66 @@
 (defclass V2rayNSUB [SUB]
   (setv scheme "v2rayn")
 
+  (defn parse-vmess-data [self data]
+    (let [data (json.loads (.decode (base64.decodebytes (.encode data))))
+          v    (get data "v")
+          ps   (get data "ps")
+          add  (get data "add")
+          port (get data "port")
+          id   (get data "id")
+          scy  (or (.get data "scy") "auto")
+          net  (or (.get data "net") "tcp")
+          type (or (.get data "type") "none")
+          host (or (.get data "host") add)
+          path (or (.get data "path") "/")
+          tls  (or (.get data "tls") "")
+          sni  (or (.get data "sni") add)]
+      (unless (=  v    "2")           (raise (RuntimeError (.format "invalid v {}"    v))))
+      (unless (=  scy  "auto")        (raise (RuntimeError (.format "invalid scy {}"  scy))))
+      (unless (in net  #("tcp" "ws")) (raise (RuntimeError (.format "invalid net {}"  net))))
+      (unless (=  type "none")        (raise (RuntimeError (.format "invalid type {}" type))))
+      (unless (in tls  #("" "tls"))   (raise (RuntimeError (.format "invalid tls {}"  tls))))
+      (OUBConf.model-validate
+        {"managed" True
+         "enabled" False
+         "name"    ps
+         "group"   self.conf.group
+         "dnsname" add
+         "delay"   0.0
+         "scheme"  "vmess"
+         "host"    add
+         "port"    (int port)
+         "tls"     (when (= tls "tls") {"host" sni "cafile" None})
+         "ws"      (when (= net "ws") {"host" host "path" path})
+         "extra"   {"id" id}})))
+
+  (defn parse-trojan-data [self data]
+    (let [url (urlparse.urlparse (+ "trojan://" data))
+          name (urlparse.unquote url.fragment)
+          #(pwd host) (.split url.netloc  "@" 1)
+          port (or url.port 443)
+          query (urlparse.parse-qs url.query)
+          sni (if (in "sni" query) (get query "sni" 0) host)]
+      (OUBConf.model-validate
+        {"managed" True
+         "enabled" False
+         "name"    name
+         "group"   self.conf.group
+         "dnsname" host
+         "delay"   0.0
+         "scheme"  "trojan"
+         "host"    host
+         "port"    port
+         "tls"     {"host" sni "cafile" None}
+         "ws"      None
+         "extra"   {"password" pwd}})))
+
   (defn parse-url [self url]
     (let [#(scheme data) (.split url "://" 1)]
-      (unless (= scheme "vmess")
-        (raise (RuntimeError (.format "invalid scheme {}" scheme))))
-      (let [data (json.loads (.decode (base64.decodebytes (.encode data))))
-            v    (get data "v")
-            ps   (get data "ps")
-            add  (get data "add")
-            port (get data "port")
-            id   (get data "id")
-            scy  (or (.get data "scy") "auto")
-            net  (or (.get data "net") "tcp")
-            type (or (.get data "type") "none")
-            host (or (.get data "host") add)
-            path (or (.get data "path") "/")
-            tls  (or (.get data "tls") "")
-            sni  (or (.get data "sni") add)]
-        (unless (=  v    "2")           (raise (RuntimeError (.format "invalid v {}"    v))))
-        (unless (=  scy  "auto")        (raise (RuntimeError (.format "invalid scy {}"  scy))))
-        (unless (in net  #("tcp" "ws")) (raise (RuntimeError (.format "invalid net {}"  net))))
-        (unless (=  type "none")        (raise (RuntimeError (.format "invalid type {}" type))))
-        (unless (in tls  #("" "tls"))   (raise (RuntimeError (.format "invalid tls {}"  tls))))
-        (OUBConf.model-validate
-          {"managed" True
-           "enabled" False
-           "name"    ps
-           "group"   self.conf.group
-           "dnsname" add
-           "delay"   -1.0
-           "scheme"  "vmess"
-           "host"    add
-           "port"    (int port)
-           "tls"     (when (= tls "tls") {"host" sni "cafile" None})
-           "ws"      (when (= net "ws") {"host" host "path" path})
-           "extra"   {"id" id}}))))
+      ((ecase scheme
+              "vmess"  self.parse-vmess-data
+              "trojan" self.parse-trojan-data)
+        data)))
 
   (defn parse [self data]
     (let [oubs (list)]

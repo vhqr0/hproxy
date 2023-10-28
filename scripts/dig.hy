@@ -14,9 +14,10 @@
                           ["-v" "--via" :default "udp"]
                           ["name"]])
         msg ((ecase args.via
-                    "udp" dns.query.udp
-                    "tcp" dns.query.tcp
-                    "tls" dns.query.tls)
+                    "udp"   dns.query.udp
+                    "tcp"   dns.query.tcp
+                    "tls"   dns.query.tls
+                    "https" dns.query.https)
               (dns.message.make-query args.name args.type)
              args.server)]
     (print (.to-text msg))))
