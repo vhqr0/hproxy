@@ -57,9 +57,9 @@
       (setv self.host host
             self.port port)
       (if (= meth "CONNECT")
-          (async-wait (.write next-stream (.pack (async-name HTTPResp) ver "200" "OK" {"Connection" "close"})))
+          (async-wait (.pack-bytes-to-stream (async-name HTTPResp) next-stream ver "200" "OK" {"Connection" "close"}))
           (let [headers (dfor #(k v) (.items headers) :if (not (.startswith k "Proxy-")) k v)]
-            (+= next-stream.read-buf (.pack (async-name HTTPReq) meth path ver headers))))
+            (setv next-stream.read-buf (+ (.pack (async-name HTTPReq) meth path ver headers) next-stream.read-buf))))
       next-stream)))
 
 (async-defclass HTTPOUB [(async-name OUB)]
@@ -103,22 +103,18 @@
                    Socks5Atype.V6 (async-name Socks5V6Host))]
    [int port :len 2]])
 
-(defstruct Socks5AuthReq
-  [[int ver :len 1 :to-validate (= it 5)]
-   [varlen meths :len 1 :to-validate (in 0 it)]])
-
-(defstruct Socks5AuthRep
-  [[int ver :len 1 :to-validate (= it 5)]
-   [int meth :len 1 :to-validate (= it 0)]])
-
 (defstruct Socks5Req
-  [[int ver :len 1 :to-validate (= it 5)]
+  [[int ver1 :len 1 :to-validate (= it 5)]
+   [varlen meths :len 1 :to-validate (in 0 it)]
+   [int ver2 :len 1 :to-validate (= it 5)]
    [int cmd :len 1 :to-validate (= it 1)]
    [int rsv :len 1 :to-validate (= it 0)]
    [struct [atype host port] :struct (async-name Socks5Addr)]])
 
 (defstruct Socks5Rep
-  [[int ver :len 1 :to-validate (= it 5)]
+  [[int ver1 :len 1 :to-validate (= it 5)]
+   [int meth :len 1 :to-validate (= it 0)]
+   [int ver2 :len 1 :to-validate (= it 5)]
    [int rep :len 1 :to-validate (= it 0)]
    [int rsv :len 1 :to-validate (= it 0)]
    [struct [atype host port] :struct (async-name Socks5Addr)]])
@@ -134,21 +130,33 @@
 
 (async-defclass Socks5Connector [(async-name ProxyConnector)]
   (defn get-next-head-pre-head [self]
-    (+ (.pack (async-name Socks5AuthReq) 5 b"\x00")
-       (.pack (async-name Socks5Req) 5 1 0 Socks5Atype.DN self.host self.port)))
+    (.pack (async-name Socks5Req)
+           :ver1  5
+           :meths b"\x00"
+           :ver2  5
+           :cmd   1
+           :rsv   0
+           :atype Socks5Atype.DN
+           :host  self.host
+           :port  self.port))
 
   (async-defn connect1 [self next-stream]
-    (async-wait (.unpack-from-stream (async-name Socks5AuthRep) next-stream))
     (async-wait (.unpack-from-stream (async-name Socks5Rep) next-stream))
     next-stream))
 
 (async-defclass Socks5Acceptor [(async-name ProxyAcceptor)]
   (async-defn accept1 [self next-stream]
-    (async-wait (.unpack-from-stream (async-name Socks5AuthReq) next-stream))
-    (async-wait (.write next-stream
-                        (+ (.pack (async-name Socks5AuthRep) 5 0)
-                           (.pack (async-name Socks5Rep) 5 0 0 Socks5Atype.V4 "0.0.0.0" 0))))
-    (let [#(_ _ _ _ host port)
+    (async-wait (.pack-bytes-to-stream (async-name Socks5Rep)
+                                       next-stream
+                                       :ver1  5
+                                       :meth  0
+                                       :ver2  5
+                                       :rep   0
+                                       :rsv   0
+                                       :atype Socks5Atype.V4
+                                       :host  "0.0.0.0"
+                                       :port  0))
+    (let [#(_ _ _ _ _ _ host port)
           (async-wait (.unpack-from-stream (async-name Socks5Req) next-stream))]
       (setv self.host host
             self.port port))

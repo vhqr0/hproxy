@@ -34,19 +34,19 @@
 (async-defclass WSFramePloadHead [(async-name Struct)]
   (setv names #("plen" "mask"))
 
-  (defn [staticmethod] pack [plen mask]
+  (async-defn [classmethod] pack-to-stream [cls writer plen mask]
     (let [mask-bit (int (bool mask))]
-      (+ (cond (< plen 126)
-               (bits-pack #(7 0) #(mask-bit plen) 1)
-               (< plen 65536)
-               (+ (bits-pack #(7 0) #(mask-bit 126) 1)
-                  (int-pack plen 2))
-               True
-               (+ (bits-pack #(7 0) #(mask-bit 127) 1)
-                  (int-pack plen 8)))
-         mask)))
+      (cond (< plen 126)
+            (async-wait (.write writer (bits-pack #(7 0) #(mask-bit plen) 1)))
+            (< plen 65536)
+            (do (async-wait (.write writer (bits-pack #(7 0) #(mask-bit 126) 1)))
+                (async-wait (.write writer (int-pack plen 2))))
+            True
+            (do (async-wait (.write writer (bits-pack #(7 0) #(mask-bit 127) 1)))
+                (async-wait (.write writer (int-pack plen 8)))))
+      (async-wait (.write writer mask))))
 
-  (async-defn [staticmethod] unpack-from-stream [reader]
+  (async-defn [classmethod] unpack-from-stream [cls reader]
     (let [#(mask-bit plen) (bits-unpack
                              #(7 0) #(1 0x7f)
                              (async-wait (.read-exactly reader 1)))
@@ -60,6 +60,9 @@
                    (async-wait (.read-exactly reader 4))
                    b"")]
       #(plen mask))))
+
+(setv WSFramePloadHead.sync-struct WSFramePloadHead
+      AsyncWSFramePloadHead.sync-struct WSFramePloadHead)
 
 (defstruct WSFrame
   [[bits [fin op] :lens [1 7]]
@@ -93,12 +96,13 @@
       #(op pload)))
 
   (async-defn write-frame [self op pload]
-    (async-wait (.write self.next-layer (.pack (async-name WSFrame)
-                                               :fin True
-                                               :op op
-                                               :plen (len pload)
-                                               :mask (if self.do-mask (randbytes 4) b"")
-                                               :pload pload))))
+    (async-wait (.pack-bytes-to-stream (async-name WSFrame)
+                                       self.next-layer
+                                       :fin   True
+                                       :op    op
+                                       :plen  (len pload)
+                                       :mask  (if self.do-mask (randbytes 4) b"")
+                                       :pload pload)))
 
   (async-defn read1 [self]
     (while True
@@ -134,10 +138,10 @@
 
   (defn get-next-head-pre-frame [self head]
     (.pack (async-name WSFrame)
-           :fin True
-           :op WSOp.Bin
-           :plen (len head)
-           :mask (randbytes 4)
+           :fin   True
+           :op    WSOp.Bin
+           :plen  (len head)
+           :mask  (randbytes 4)
            :pload head))
 
   (async-defn connect1 [self next-stream]
@@ -156,11 +160,12 @@
           host (get headers "Host")
           key (get headers "Sec-WebSocket-Key")
           accept (.decode (b64encode (.digest (sha1 (.encode (+ key self.magic))))))]
-      (async-wait (.write next-stream (.pack (async-name HTTPResp)
-                                             "HTTP/1.1" "101" "Switching Protocols"
-                                             {"Upgrade" "websocket"
-                                              "Connection" "Upgrade"
-                                              "Sec-WebSocket-Accept" accept})))
+      (async-wait (.pack-bytes-to-stream (async-name HTTPResp)
+                                         next-stream
+                                         "HTTP/1.1" "101" "Switching Protocols"
+                                         {"Upgrade" "websocket"
+                                          "Connection" "Upgrade"
+                                          "Sec-WebSocket-Accept" accept}))
       (setv self.host host
             self.path path)
       ((async-name WSStream) :do-mask False :next-layer next-stream))))
