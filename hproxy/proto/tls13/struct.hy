@@ -1,4 +1,4 @@
-;;; RFC 8466 TLS 1.3
+;;; RFC 8446 TLS 1.3
 ;;; RFC 6066 TLS Extensions
 
 (require
