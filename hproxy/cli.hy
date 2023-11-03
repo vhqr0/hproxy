@@ -17,7 +17,8 @@
   hproxy
   hproxy.base *
   hproxy.server *
-  hproxy.proto.http *)
+  hproxy.proto.http *
+  hproxy.proto.tls13 *)
 
 
 ;;; base
@@ -203,16 +204,16 @@
   (setv command "ping")
 
   (defn/a aping [self url oub]
-    (let [url (urlparse url)]
+    (let [url (urlparse url)
+          head (.pack HTTPReq "GET" (or url.path "/") "HTTP/1.1" {"Host" url.hostname})]
       (ecase url.scheme
-             "tcp"  (with/a [_ (await (.lowest-tcp-open-connection oub))])
-             "http" (with/a [stream (await (.connect oub
-                                                     :host url.hostname
-                                                     :port (or url.port 80)
-                                                     :head (.pack AsyncHTTPReq
-                                                                  "GET" (or url.path "/") "HTTP/1.1"
-                                                                  {"Host" url.hostname})))]
-                      (await (.unpack-from-stream AsyncHTTPResp stream))))))
+             "tcp"   (with/a [_ (await (.lowest-tcp-open-connection oub))])
+             "http"  (with/a [stream (await (.connect oub :host url.hostname :port (or url.port 80) :head head))]
+                       (await (.unpack-from-stream AsyncHTTPResp stream)))
+             "https" (with/a [lowest-stream (await (.lowest-open-connection oub))]
+                       (let [connector (AsyncTLS13Connector :host url.hostname :next-layer (.get-connector oub url.hostname (or url.port 443)))
+                             stream (await (.connect-with-head connector lowest-stream head))]
+                         (await (.unpack-from-stream AsyncHTTPResp stream)))))))
 
   (defn ping [self url oub timeout]
     (asyncio.run
