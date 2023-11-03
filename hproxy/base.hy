@@ -8,7 +8,7 @@
   typing [Any Optional]
   pydantic [BaseModel]
   hiolib.stream *
-  hproxy.ws *)
+  hproxy.proto.ws *)
 
 (async-defclass ProxyConnector [(async-name Connector)]
   (defn #-- init [self host port #** kwargs]

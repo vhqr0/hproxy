@@ -12,7 +12,7 @@
   hashlib [sha1]
   hiolib.stream *
   hiolib.struct *
-  hproxy.http *)
+  hproxy.proto.http *)
 
 (defclass WSOp [IntEnum]
   (setv Cont  0x00

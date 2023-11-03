@@ -9,8 +9,8 @@
   pydantic [BaseModel]
   hiolib.stream *
   hproxy
-  hproxy.http *
-  hproxy.base *)
+  hproxy.base *
+  hproxy.proto.http *)
 
 (defn/a stream-copy [from-stream to-stream]
   (let [buf (await (.read from-stream))]

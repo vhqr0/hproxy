@@ -14,8 +14,8 @@
   functools [cached-property]
   hiolib.struct *
   hiolib.stream *
-  hproxy.http *
-  hproxy.base *)
+  hproxy.base *
+  hproxy.proto.http *)
 
 (async-defclass BlockOUB [(async-name OUB)]
   (setv scheme "block")

@@ -15,9 +15,9 @@
   dns.rdatatype
   hiolib.rule *
   hproxy
-  hproxy.http *
   hproxy.base *
-  hproxy.server *)
+  hproxy.server *
+  hproxy.proto.http *)
 
 
 ;;; base
