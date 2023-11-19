@@ -5,7 +5,8 @@
   logging
   hproxy.cli *
   hproxy.proto.proxy *
-  hproxy.proto.v2ray *)
+  hproxy.proto.vmess *
+  hproxy.proto.v2rayn *)
 
 (defmain []
   (logging.basicConfig
