@@ -93,8 +93,9 @@
           (.recv-server-hello self.crypt-ctx server-random server-share self.handshake-messages))))
 
     ;; strip change cipher spec
-    (when (.startswith (async-wait (.peek-until next-stream (fn [buf] (>= (len buf) (len CHANGE-CIPHER-SPEC))))) CHANGE-CIPHER-SPEC)
-      (async-wait (.read-exactly next-stream (len CHANGE-CIPHER-SPEC))))
+    (let [buf (async-wait (.peek-atleast next-stream (len CHANGE-CIPHER-SPEC)))]
+      (when (.startswith buf CHANGE-CIPHER-SPEC)
+        (setv next-stream.read-buf (cut buf (len CHANGE-CIPHER-SPEC) None))))
 
     ;; read encrypted extensions
     (let [encrypted-extensions (async-wait (.read-handshake-ciphertext self next-stream))
