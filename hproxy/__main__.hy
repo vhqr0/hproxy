@@ -2,15 +2,9 @@
   hiolib.rule :readers * *)
 
 (import
-  logging
-  hproxy.cli *
-  hproxy.proto.proxy *
-  hproxy.proto.vmess *
-  hproxy.proto.v2rayn *)
+  hproxy.debug :as debug
+  hproxy.cli *)
 
 (defmain []
-  (logging.basicConfig
-    :level   "INFO"
-    :format  "%(asctime)s %(name)s %(levelname)s %(message)s"
-    :datefmt "%H:%M")
+  (debug.log-config)
   (.run (Cli)))

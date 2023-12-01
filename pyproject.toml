@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "hproxy"
+version = "0.1.0"
+description = "A simple proxy tool based on hiolib"
+authors = ["vhqr0 <zq_cmd@163.com>"]
+readme = "readme.org"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+hy = "^0.27.0"
+hyrule = "^0.4.0"
+hiolib = "^0.1.0"
+pydantic = "^2.2.1"
+PyYAML = "^6.0.1"
+dnspython = {version = "^2.3.0", extras = ["doh"]}
+pycryptodome = "^3.18.0"
+cryptography = "^39.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

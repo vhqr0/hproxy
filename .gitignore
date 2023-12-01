@@ -1,8 +1,6 @@
 __pycache__
-*.py
 
 /.venv
-/hproxy.egg-info
 /build
 /dist
 

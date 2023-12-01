@@ -3,9 +3,12 @@
   hiolib.struct *)
 
 (import
-  hiolib.struct *)
+  hiolib.struct *
+  hproxy.proto.proxy *)
 
 (defclass HTTPStatusError [StructValidationError])
+
+
 
 (defn http-pack-addr [host port]
   ;; example:
@@ -53,6 +56,8 @@
         :setv #(k v) (.split header ":" 1)
         (.strip k) (.strip v)))
 
+
+
 (defstruct HTTPHeaders
   [[line headers
     :sep b"\r\n"
@@ -68,6 +73,8 @@
     :from (.join " " it)
     :to (.split it :maxsplit 2)]])
 
+
+
 (defstruct HTTPReq
   [[struct [[meth path ver]] :struct (async-name HTTPFirstLine)]
    [struct [headers] :struct (async-name HTTPHeaders)]])
@@ -76,8 +83,35 @@
   [[struct [[ver status reason]] :struct (async-name HTTPFirstLine)]
    [struct [headers] :struct (async-name HTTPHeaders)]])
 
+
+
+(async-defclass HTTPConnector [(async-name ProxyConnector)]
+  (defn get-next-head-pre-head [self]
+    (let [addr (http-pack-addr self.host self.port)]
+      (.pack (async-name HTTPReq) "CONNECT" addr "HTTP/1.1" {"Host" addr})))
+
+  (async-defn connect1 [self next-stream]
+    (let [#(_ status _ _)
+          (async-wait (.unpack-from-stream (async-name HTTPResp) next-stream))]
+      (unless (= status "200")
+        (raise HTTPStatusError))
+      next-stream)))
+
+(async-defclass HTTPAcceptor [(async-name ProxyAcceptor)]
+  (async-defn accept1 [self next-stream]
+    (let [#(meth path ver headers)
+          (async-wait (.unpack-from-stream (async-name HTTPReq) next-stream))
+          #(host port) (http-unpack-addr (get headers "Host"))]
+      (setv self.host host
+            self.port port)
+      (if (= meth "CONNECT")
+          (async-wait (.pack-bytes-to-stream (async-name HTTPResp) next-stream ver "200" "OK" {"Connection" "close"}))
+          (let [headers (dfor #(k v) (.items headers) :if (not (.startswith k "Proxy-")) k v)]
+            (setv next-stream.read-buf (+ (.pack (async-name HTTPReq) meth path ver headers) next-stream.read-buf))))
+      next-stream)))
+
 (export
   :objects [HTTPStatusError
-            http-pack-addr http-unpack-addr
-            http-pack-headers http-unpack-headers
-            HTTPReq AsyncHTTPReq HTTPResp AsyncHTTPResp])
+            http-pack-addr http-unpack-addr http-pack-headers http-unpack-headers
+            HTTPReq AsyncHTTPReq HTTPResp AsyncHTTPResp
+            HTTPConnector AsyncHTTPConnector HTTPAcceptor AsyncHTTPAcceptor])

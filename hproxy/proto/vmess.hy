@@ -22,7 +22,7 @@
   cryptography.hazmat.primitives.ciphers.aead [AESGCM]
   hiolib.struct *
   hiolib.stream *
-  hproxy.base *
+  hproxy.proto.proxy *
 
   ;;; legacy
   ;; hmac [HMAC]
@@ -40,6 +40,8 @@
       VMESS-RESP-LEN-IV  b"AEAD Resp Header Len IV"
       VMESS-RESP-KEY     b"AEAD Resp Header Key"
       VMESS-RESP-IV      b"AEAD Resp Header IV")
+
+
 
 (defn hmac2hash [key block-size digest-size hash-func]
   (when (> (len key) block-size)
@@ -72,7 +74,9 @@
       (setv r (& (* (^ c r) p) m)))
     (int-pack r 4)))
 
-(defstruct VmessReq
+
+
+(defstruct VMessReq
   [[int ver :len 1]
    [bytes iv :len 16]
    [bytes key :len 16]
@@ -86,20 +90,22 @@
    [varlen host :len 1 :from (.encode it) :to (.decode it)]
    [bytes pad :len p]])
 
-(defstruct VmessResp
+(defstruct VMessResp
   [[int v :len 1]
    [int opt :len 1 :to-validate (= it 0)]
    [int cmd :len 1 :to-validate (= it 0)]
    [int mlen :len 1 :to-validate (= it 0)]])
 
-(defclass VmessID [UUID]
+
+
+(defclass VMessID [UUID]
   (defn [cached-property] cmd-key [self]
     (.digest (md5 (+ self.bytes VMESS-MAGIC))))
 
   (defn [cached-property] aid-key [self]
     (cut (vmess-kdf self.cmd-key VMESS-AID) 16))
 
-  ;;; legacy
+;;; legacy
   ;; (defn encrypt-req [self req]
   ;;   (let [ts (int-pack (int (time.time)) 8)
   ;;         auth (.digest (HMAC :key self.bytes :msg ts :digestmod md5))
@@ -122,7 +128,9 @@
                    (.encrypt (cut (vmess-kdf self.cmd-key VMESS-REQ-IV eaid nonce) 12) req eaid))]
       (+ eaid elen nonce ereq))))
 
-(defclass VmessCryptor []
+
+
+(defclass VMessCryptor []
   (defn #-- init [self key iv [count 0]]
     (setv self.shake (SHAKE128-XOF iv)
           self.aead (AESGCM key)
@@ -155,7 +163,9 @@
           eblen (.encrypt-len self (len ebuf))]
       (+ eblen ebuf))))
 
-(async-defclass VmessStream [(async-name Stream)]
+
+
+(async-defclass VMessStream [(async-name Stream)]
   (defn #-- init [self write-encryptor read-decryptor #** kwargs]
     (#super-- init #** kwargs)
     (setv self.write-encryptor write-encryptor
@@ -170,7 +180,7 @@
           ebuf (async-wait (.read-exactly self.next-layer blen))]
       (.decrypt self.read-decryptor ebuf))))
 
-(async-defclass VmessConnector [(async-name ProxyConnector)]
+(async-defclass VMessConnector [(async-name ProxyConnector)]
   (defn #-- init [self id #** kwargs]
     (#super-- init #** kwargs)
     (setv self.id id
@@ -183,11 +193,11 @@
           self.riv (cut (.digest (sha256 self.iv)) 16)
           self.v (getrandbits 8)
           self.pad (randbytes (getrandbits 4))
-          self.write-encryptor (VmessCryptor :key self.key :iv self.iv)
-          self.read-decryptor (VmessCryptor :key self.rkey :iv self.riv)))
+          self.write-encryptor (VMessCryptor :key self.key :iv self.iv)
+          self.read-decryptor (VMessCryptor :key self.rkey :iv self.riv)))
 
   (defn get-next-head-pre-head [self]
-    (let [req (.pack (async-name VmessReq)
+    (let [req (.pack (async-name VMessReq)
                      :ver    1
                      :iv     self.iv
                      :key    self.key
@@ -213,10 +223,10 @@
   ;;         resp (-> (Cipher (AES self.rkey) (CFB self.riv))
   ;;                  (.decryptor)
   ;;                  (.update eresp))
-  ;;         #(v _ _ _) (.unpack VmessResp resp)]
+  ;;         #(v _ _ _) (.unpack VMessResp resp)]
   ;;     (unless (= v self.v)
   ;;       (raise StructValidationError))
-  ;;     ((async-name VmessStream)
+  ;;     ((async-name VMessStream)
   ;;       :write-encryptor self.write-encryptor
   ;;       :read-decryptor self.read-decryptor
   ;;       :next-layer next-stream)))
@@ -228,22 +238,13 @@
           eresp (async-wait (.read-exactly next-stream (+ 16 rlen)))
           resp (-> (AESGCM (cut (vmess-kdf self.rkey VMESS-RESP-KEY) 16))
                    (.decrypt (cut (vmess-kdf self.riv VMESS-RESP-IV) 12) eresp None))
-          #(v _ _ _) (.unpack VmessResp resp)]
+          #(v _ _ _) (.unpack VMessResp resp)]
       (unless (= v self.v)
         (raise StructValidationError))
-      ((async-name VmessStream)
+      ((async-name VMessStream)
         :write-encryptor self.write-encryptor
         :read-decryptor self.read-decryptor
         :next-layer next-stream))))
 
-(async-defclass VmessOUB [(async-name OUB)]
-  (setv scheme "vmess")
-
-  (defn [cached-property] id [self]
-    (VmessID (get self.conf.extra "id")))
-
-  (defn get-proxy-connector [self host port]
-    ((async-name VmessConnector) :host host :port port :id self.id)))
-
 (export
-  :objects [])
+  :objects [VMessID VMessConnector AsyncVMessConnector])

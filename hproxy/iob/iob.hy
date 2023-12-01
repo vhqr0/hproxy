@@ -11,7 +11,7 @@
   hproxy.proto.ws *)
 
 
-;;; oub/inb/sub conf
+;;; oub/inb conf
 
 (defclass OUBTLSConf [BaseModel]
   #^ str               host
@@ -62,14 +62,8 @@
   #^ (of Optional INBWSConf)         ws
   #^ (of Optional (of dict str Any)) extra)
 
-(defclass SUBConf [BaseModel]
-  #^ str                             group
-  #^ str                             scheme
-  #^ str                             url
-  #^ (of Optional (of dict str Any)) extra)
-
 
-;;; oub/inb/sub
+;;; oub/inb
 
 (defclass SchemeDispatchMixin []
   (setv scheme None
@@ -172,11 +166,5 @@
           stream (async-wait (.accept acceptor lowest-stream))]
       #(stream acceptor.host acceptor.port))))
 
-(defclass SUB [SchemeDispatchMixin]
-  (setv scheme-dict (dict))
-
-  (defn fetch [self]
-    (raise NotImplementedError)))
-
 (export
-  :objects [OUBConf OUB AsyncOUB INBConf INB AsyncINB SUBConf SUB])
+  :objects [OUBConf INBConf OUB AsyncOUB INB AsyncINB])

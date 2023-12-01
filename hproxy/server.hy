@@ -8,9 +8,9 @@
   functools [cache cached-property]
   pydantic [BaseModel]
   hiolib.stream *
-  hproxy
-  hproxy.base *
-  hproxy.proto.http *)
+  hproxy.debug :as debug
+  hproxy.proto.http *
+  hproxy.iob *)
 
 (defn/a stream-copy [from-stream to-stream]
   (let [buf (await (.read from-stream))]
@@ -18,18 +18,11 @@
       (await (.write to-stream buf))
       (setv buf (await (.read from-stream))))))
 
-(defclass ServerConf [BaseModel]
-  #^ INBConf                         inb
-  #^ (of dict str (of list OUBConf)) oubs
-  #^ (of dict str str)               tags
-  #^ (of Optional (of dict str Any)) extra)
-
 (defclass Server []
-  (defn #-- init [self conf]
-    (setv self.conf conf
-          self.inb (AsyncINB.from-conf self.conf.inb)
-          self.oubs (dfor #(tag oubs) (.items self.conf.oubs)
-                          tag (lfor oub oubs :if oub.enabled (AsyncOUB.from-conf oub)))
+  (defn #-- init [self inb oubs tags]
+    (setv self.inb   inb
+          self.oubs  oubs
+          self.tags  tags
           self.tasks (set)))
 
   (defn add-task [self task]
@@ -37,10 +30,10 @@
     (.add-done-callback task self.tasks.discard))
 
   (defn [cached-property] default-tag [self]
-    (get self.conf.tags "*"))
+    (get self.tags "*"))
 
   (defn match-tags [self host]
-    (let [tag (.get self.conf.tags host)]
+    (let [tag (.get self.tags host)]
       (if tag
           tag
           (let [sp (.split host "." 1)]
@@ -49,7 +42,10 @@
                 self.default-tag)))))
 
   (defn choice-oub [self host]
-    (choice (get self.oubs (.match-tags self host))))
+    (let [oubs (.get self.oubs (.match-tags self host))]
+      (unless oubs
+        (raise KeyError))
+      (choice oubs)))
 
   (defn/a serve-callback [self lowest-stream]
     (.add-task self (asyncio.current-task))
@@ -60,17 +56,15 @@
         (unless head
           (raise StreamEOFError))
         (except [e Exception]
-          (hproxy.log-info "except while accepting: [%s]%.60s" (type e) e)
-          (hproxy.print-exc)
+          (debug.log-info-with-exc "except while accepting: [%s]%.60s" (type e) e)
           (return)))
       (setv oub (.choice-oub self host))
-      (hproxy.log-info "connect to %s %d via %s" host port oub.conf.name)
+      (debug.log-info "connect to %s %d via %s" host port oub.conf.name)
       (try
         (setv oub-stream (await (.connect oub host port head)))
         (except [e Exception]
-          (hproxy.log-info "except while connecting to %s %d via %s: [%s]%.60s"
-                 host port oub.conf.name (type e) e)
-          (hproxy.print-exc)
+          (debug.log-info-with-exc "except while connecting to %s %d via %s: [%s]%.60s"
+            host port oub.conf.name (type e) e)
           (return)))
       (with/a [_ oub-stream]
         (let [tasks #((asyncio.create-task (stream-copy inb-stream oub-stream))
@@ -89,11 +83,10 @@
         (let [addrs (lfor sock server.sockets
                           :setv #(host port) (.getsockname sock)
                           (http-pack-addr host port))]
-          (hproxy.log-info "server start at %s" (.join "," addrs)))
+          (debug.log-info "server start at %s" (.join "," addrs)))
         (await (.serve-forever server)))
       (except [e Exception]
-        (hproxy.log-info "except while serving: [%s]%s" (type e) e)
-        (hproxy.print-exc)))))
+        (debug.log-info-with-exc "except while serving: [%s]%s" (type e) e)))))
 
 (export
-  :objects [ServerConf Server])
+  :objects [Server])
