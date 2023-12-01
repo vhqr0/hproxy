@@ -115,7 +115,7 @@
       (ecase url.scheme
              "vmess"  (+ "vmess://" (decode-vmess-data url.netloc))
              "trojan" (.geturl url))))
-  (let [args (parse-args [["-i" "--input" :default "sub"]])
+  (let [args (parse-args [["-i" "--input" :default "subscribe"]])
         data (with [f (open args.input "rb")] (.read f))]
     (for [url (.split (decode-v2rayn-data data) "\r\n")]
       (when url

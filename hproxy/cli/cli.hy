@@ -53,14 +53,13 @@
     (.get self.extra "managedTag" "forward"))
 
   (defn load [self]
-    (setv self.conf (.model-validate
-                      CliConf
+    (setv self.conf (CliConf.model-validate
                       (with [f (open self.path)]
                         (yaml.load f :Loader yaml.CLoader)))))
 
   (defn save [self]
     (with [f (open self.path "w")]
-      (yaml.dump (.dict self.conf) f :Dumper yaml.CDumper :sort-keys False)))
+      (yaml.dump (.model-dump self.conf) f :Dumper yaml.CDumper :sort-keys False)))
 
   (defn [property] args-spec [self]
     (list))
@@ -69,4 +68,4 @@
     (raise NotImplementedError)))
 
 (export
-  :objects [Cli Command])
+  :objects [CliConf Cli Command])

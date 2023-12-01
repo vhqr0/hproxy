@@ -1,4 +1,3 @@
-#!/usr/bin/env hy
 ;; https://github.com/v2fly/domain-list-community
 
 (require
@@ -6,6 +5,7 @@
 
 (import
   hyrule *
+  sys
   os.path
   re
   yaml)
@@ -27,11 +27,8 @@
                 (load data-path arg default-tag tags)))))))
 
 (defmain []
-  (let [args (parse-args [["-d" "--data-path"
-                           :default (os.path.join "domain-list-community" "data")]
-                          ["-o" "--output-path" :default "tags.yaml"]])
+  (let [args (parse-args [["-d" "--data-path" :default (os.path.join "domain-list-community" "data")]])
         tags {"*" "direct"}]
     (load args.data-path "cn" "cn" tags)
     (load args.data-path "geolocation-!cn" "!cn" tags)
-    (with [f (open args.output-path "w")]
-      (yaml.dump {"tags" tags} f :Dumper yaml.CDumper :sort-keys False))))
+    (yaml.dump {"tags" tags} sys.stdout :Dumper yaml.CDumper :sort-keys False)))
