@@ -1,5 +1,5 @@
 (require
-  hyrule :readers * *)
+  hiolib.rule :readers * *)
 
 (import
   socket

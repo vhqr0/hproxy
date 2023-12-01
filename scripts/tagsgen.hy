@@ -1,14 +1,14 @@
 ;; https://github.com/v2fly/domain-list-community
 
 (require
-  hyrule :readers * *)
+  hiolib.rule :readers * *)
 
 (import
-  hyrule *
   sys
   os.path
   re
-  yaml)
+  yaml
+  hiolib.rule *)
 
 (setv tags-dict {"ads" "block" "cn" "direct" "!cn" "forward"})
 
