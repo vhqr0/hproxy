@@ -1,6 +1,5 @@
 (require
-  hiolib.rule :readers * *
-  hiolib.struct *)
+  hiolib.rule :readers * *)
 
 (import
   ssl
@@ -22,17 +21,15 @@
   #^ str path)
 
 (defclass OUBConf [BaseModel]
-  ;; - managed: whether this oub is auto managed, if so, some attrs
-  ;; will be dynamically configured, such as enabled, dnsname, delay,
-  ;; etc.
+  ;; - managed: wheter to auto configure this oub, such as enabled,
+  ;; host, delay, etc
   ;;
-  ;; - enabled: whether to add this oub to oubs when starting the
-  ;; service, in order to temporarily disable unavailable auto managed
-  ;; oubs.
+  ;; - enabled: whether to use this oub while serving, manually set or
+  ;; auto configured by cli, to False to disable this oub
   ;;
-  ;; - host&dnsname: dnsname usually refers to the host we refer to,
-  ;; and host is the actual connection address, which can be dnsname
-  ;; or the resolved address of dnsname.
+  ;; - host&dnsname: dnsname refers to "host" we usually refer to,
+  ;; while host is the real addr to connect, which can be dnsname or
+  ;; the resolved addr of dnsname
 
   #^ bool                            managed
   #^ bool                            enabled
@@ -114,9 +111,12 @@
                     (.lowest-tls-open-connection self)
                     (.lowest-tcp-open-connection self))))
 
-  (async-defn connect [self host port head]
-    (let [connector (.get-connector self host port)
-          lowest-stream (async-wait (.lowest-open-connection self))]
+  (async-defn connect [self host port head [highest-connector None]]
+    (let [lowest-stream (async-wait (.lowest-open-connection self))
+          connector (.get-connector self host port)]
+      (when highest-connector
+        (setv highest-connector.lowest-layer.next-layer connector
+              connector highest-connector))
       (try
         (async-wait (.connect-with-head connector lowest-stream head))
         (except [Exception]

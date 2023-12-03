@@ -3,12 +3,28 @@
 
 (import
   argparse
+  asyncio
+  logging
+  traceback [format-exc]
   typing [Any Optional]
   pydantic [BaseModel]
   yaml
   hiolib.rule *
-  hproxy.debug :as debug
   hproxy.iob *)
+
+(setv debug False)
+
+(setv logger (logging.getLogger "hproxy"))
+
+(defn log-info [#* args]
+  (.info logger #* args))
+
+(defn log-info-exc [#* args]
+  (log-info #* args)
+  (when debug
+    (print (format-exc))))
+
+
 
 (defclass CliConf [BaseModel]
   #^ INBConf                         inb
@@ -24,12 +40,25 @@
                    ["command"]
                    ["command_args" :nargs argparse.REMAINDER]])
 
+  (defn log-config [self]
+    (logging.basicConfig
+      :level   "INFO"
+      :format  "%(asctime)s %(name)s %(levelname)s %(message)s"
+      :datefmt "%H:%M"))
+
   (defn run [self [args None]]
+    (global debug)
     (let [args (parse-args self.args-spec args)]
-      (setv debug.debug args.debug)
-      (let [command ((get self.command-dict args.command) :path args.conf-path)
-            command-args (parse-args command.args-spec args.command-args)]
-        (.run command command-args)))))
+      (setv debug args.debug)
+      (let [command ((get self.command-dict args.command)
+                      :path args.conf-path
+                      :args args.command-args)]
+        (try
+          (.run command)
+          (except [e Exception]
+            (log-info-exc "except while running %s: [%s]%s" command.command (type e) e))
+          (except [KeyboardInterrupt]
+            (log-info "keyboard quit")))))))
 
 (defclass Command []
   (setv command None)
@@ -39,18 +68,16 @@
     (when cls.command
       (setv (get Cli.command-dict cls.command) cls)))
 
-  (defn #-- init [self path]
+  (defn #-- init [self path args]
     (setv self.path path)
-    (.load self))
+    (.load self)                ; load conf first, then get args spec
+    (setv self.args (parse-args self.args-spec args)))
 
-  (defn [property] server [self]
-    (Server self.conf))
+  (defn [property] args-spec [self]
+    (list))
 
   (defn [property] extra [self]
     (or self.conf.extra (dict)))
-
-  (defn [property] managed-tag [self]
-    (.get self.extra "managedTag" "forward"))
 
   (defn load [self]
     (setv self.conf (CliConf.model-validate
@@ -61,11 +88,11 @@
     (with [f (open self.path "w")]
       (yaml.dump (.model-dump self.conf) f :Dumper yaml.CDumper :sort-keys False)))
 
-  (defn [property] args-spec [self]
-    (list))
+  (defn/a arun [self]
+    (raise NotImplementedError))
 
-  (defn run [self args]
-    (raise NotImplementedError)))
+  (defn run [self]
+    (asyncio.run (.arun self))))
 
 (export
-  :objects [CliConf Cli Command])
+  :objects [debug log-info log-info-exc CliConf Cli Command])

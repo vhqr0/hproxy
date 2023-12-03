@@ -10,7 +10,7 @@
   enum [IntEnum]
   hashlib [sha224]
   hiolib.struct *
-  hproxy.proto.proxy *
+  hproxy.proto.base *
   hproxy.proto.http *)
 
 (defclass Socks5Atype [IntEnum]

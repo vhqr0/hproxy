@@ -14,7 +14,6 @@
   uuid [UUID]
   zlib [crc32]
   hashlib [md5 sha256]
-  urllib.parse :as urlparse
   Crypto.Hash.SHAKE128 [SHAKE128-XOF]
   cryptography.hazmat.primitives.ciphers [Cipher]
   cryptography.hazmat.primitives.ciphers.algorithms [AES]
@@ -22,7 +21,7 @@
   cryptography.hazmat.primitives.ciphers.aead [AESGCM]
   hiolib.struct *
   hiolib.stream *
-  hproxy.proto.proxy *
+  hproxy.proto.base *
 
   ;;; legacy
   ;; hmac [HMAC]

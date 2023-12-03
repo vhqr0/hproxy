@@ -3,8 +3,9 @@
   hiolib.struct *)
 
 (import
+  io [StringIO]
   hiolib.struct *
-  hproxy.proto.proxy *)
+  hproxy.proto.base *)
 
 (defclass HTTPStatusError [StructValidationError])
 
@@ -73,8 +74,6 @@
     :from (.join " " it)
     :to (.split it :maxsplit 2)]])
 
-
-
 (defstruct HTTPReq
   [[struct [[meth path ver]] :struct (async-name HTTPFirstLine)]
    [struct [headers] :struct (async-name HTTPHeaders)]])
@@ -110,8 +109,64 @@
             (setv next-stream.read-buf (+ (.pack (async-name HTTPReq) meth path ver headers) next-stream.read-buf))))
       next-stream)))
 
+
+
+(async-defclass HTTPRequester [(async-name Requester)]
+  (defn #-- init [self [meth "GET"] [path "/"] [ver "HTTP/1.1"] [host None] [headers None] [content None]]
+    (setv self.meth meth
+          self.path path
+          self.ver ver
+          self.host host
+          self.headers headers
+          self.content content))
+
+  (defn [property] head [self]
+    (let [headers (dict)]
+      (when self.host
+        (setv (get headers "Host") self.host))
+      (when self.headers
+        (for [#(k v) (.items self.headers)]
+          (setv (get headers k) v)))
+      (+ (.pack HTTPReq self.meth self.path self.ver headers)
+         (or self.content b""))))
+
+  (async-defn request [self stream]
+    (let [resp (async-wait (.unpack-from-stream (async-name HTTPResp) stream))
+          #(ver status reason headers) resp
+          content-length    (.get headers "Content-Length")
+          transfer-encoding (.get headers "Transfer-Encoding")
+          content b""]
+      (when content-length
+        (setv content (async-wait (.read-exactly stream (int content-length)))))
+      (when (and (not content-length) (= transfer-encoding "chunked"))
+        (let [bufs (list)]
+          (while True
+            (let [chunk-length (.decode (async-wait (.read-line stream)))]
+              (when (in chunk-length #("0" ""))
+                (break))
+              (.append bufs (async-wait (.read-exactly stream (int chunk-length 16))))))
+          (setv content (.join b"" bufs))))
+      #(resp content)))
+
+  (defn [classmethod] resp-to-str [cls resp]
+    (let [#(#(ver status reason headers) content) resp
+          sio (StringIO)]
+      (.write sio (.format "{} {} {}\n" ver status reason))
+      (for [#(k v) (.items headers)]
+        (.write sio (.format "{}: {}\n" k v)))
+      (.write sio "\n")
+      (if (<= (len content) 512)
+          (.write sio (.format "{}\n" content))
+          (.write sio (.format "{}...\n" (cut content 512))))
+      (.getvalue sio)))
+
+  (defn [classmethod] resp-to-bytes [cls resp]
+    (let [#(#(ver status reason headers) content) resp]
+      content)))
+
 (export
   :objects [HTTPStatusError
             http-pack-addr http-unpack-addr http-pack-headers http-unpack-headers
             HTTPReq AsyncHTTPReq HTTPResp AsyncHTTPResp
-            HTTPConnector AsyncHTTPConnector HTTPAcceptor AsyncHTTPAcceptor])
+            HTTPConnector AsyncHTTPConnector HTTPAcceptor AsyncHTTPAcceptor
+            HTTPRequester AsyncHTTPRequester])
