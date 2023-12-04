@@ -2,12 +2,12 @@
 
 ** Overview
 
-- hproxy.proto :: 流协议的流、连接器、接收器、请求器的实现集合，包括
-  DNS、HTTP、WebSocket、TLS1.3、Socks5、Tronjan、VMess
-- hproxy.iob :: 代理出口、入口的可序列化配置对象实现，包括 Block、
-  Direct、HTTP、Socks5、Trojan 和 VMess
-- hproxy.cli :: 代理工具集，包括配置文件管理、运行代理服务、通过代理进
-  行 HTTP 请求或 DNS 查询、同步 V2rayN 格式的订阅链接等
+- hproxy.proto :: 流协议的连接器、接收器、请求器的实现集合，包括 DNS、
+  HTTP、WebSocket、TLS1.3、Socks5、Tronjan、VMess
+- hproxy.iob :: 代理出入口的可序列化配置对象实现，包括 Block、Direct、
+  HTTP、Socks5、Trojan 和 VMess
+- hproxy.cli :: 代理工具集，包括配置管理、运行代理服务、通过代理进行
+  HTTP/DNS 请求、同步订阅链接等
 
 ** hproxy.proto
 
@@ -26,7 +26,7 @@
         connector (TLS13Connector :host "www.google.com" :next-layer vmess-connector)]
     (with [lowest-stream (TCPStream.open-connection vmess-node-host vmess-node-port)]
       (let [stream (.connect-with-head connector lowest-stream requester.head)]
-        (.request requester))))
+        (.request requester stream))))
 #+end_src
 
 =hproxy.proto= 中提供的连接器/接受器/请求器：
@@ -41,6 +41,15 @@
 
 
 =hproxy.proto= 还提供了这些类的响应的工具，例如 =hproxy.proto.socks5.get-trojan-auth= 、 =hproxy.proto.vmess.VMessID= 等。
+
+通过代理配置发起请求的例子：
+
+#+begin_src hy
+  (let [requester (HTTPRequester :meth "GET" :path "/" :host "www.google.com")
+        highest-connector (if https? (TLS13Connector :host "www.google.com") None)]
+    (with [stream (.connect oub "www.google.com" (if https? 443 80) requester.head highest-connector)]
+      (.request requester stream)))
+#+end_src
 
 ** hproxy.iob
 
@@ -208,6 +217,9 @@ vmess-aead 比 vmess-legacy 更好实现，主要问题在于如何全局管理 
 *** TODO hproxy.proto.tls13 完善
 
 =hproxy.proto.tls13= 最大的问题是前面的证书验证问题，还有一些小问题，
-包括实现 PSK 机制、处理密钥更新请求等。
+包括实现 PSK 机制、处理密钥更新请求等。考虑实现服务端。
 
-考虑实现服务端。
+*** TODO hproxy.proto.ss 实现
+
+考虑实现 Shadow Socks 协议，为 =hproxy.cli.fetch= 添加 ss 支持。主要问
+题是缺乏文档，包括 ss 协议和 V2rayN 格式协议。
