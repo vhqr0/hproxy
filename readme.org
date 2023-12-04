@@ -1,0 +1,213 @@
+* hproxy - 基于 hiolib 的简单代理工具
+
+** Overview
+
+- hproxy.proto :: 流协议的流、连接器、接收器、请求器的实现集合，包括
+  DNS、HTTP、WebSocket、TLS1.3、Socks5、Tronjan、VMess
+- hproxy.iob :: 代理出口、入口的可序列化配置对象实现，包括 Block、
+  Direct、HTTP、Socks5、Trojan 和 VMess
+- hproxy.cli :: 代理工具集，包括配置文件管理、运行代理服务、通过代理进
+  行 HTTP 请求或 DNS 查询、同步 V2rayN 格式的订阅链接等
+
+** hproxy.proto
+
+=hproxy.proto= 实现了 =hiolib.stream= 中多种流协议的
+=Async?Connector/Acceptor= ，特别的，对于代理协议的连接器、接收器都继
+承自子类 =Async?ProxyConnector/Acceptor= ，其中连接器有固定的参数
+=host= 和 =port= ，表示代理的目的主机和端口；接收器在接收一个流后其
+=host= 和 =port= 属性被设置为代理请求的目的主机和端口。请求器
+=Async?Requester= 用于在流上进行一次请求，例如 HTTP 请求或 DNS 查询。
+
+例子：
+
+#+begin_src hy
+  (let [requester (HTTPRequester :meth "GET" :path "/" :host "www.google.com")
+        vmess-connector (VMessConnector :id vmess-id :host "www.google.com" :port 443)
+        connector (TLS13Connector :host "www.google.com" :next-layer vmess-connector)]
+    (with [lowest-stream (TCPStream.open-connection vmess-node-host vmess-node-port)]
+      (let [stream (.connect-with-head connector lowest-stream requester.head)]
+        (.request requester))))
+#+end_src
+
+=hproxy.proto= 中提供的连接器/接受器/请求器：
+
+- DNS :: =hproxy.proto.dns.DNSRequester=
+- HTTP :: =hproxy.proto.http.HTTPConenctor= =hproxy.proto.http.HTTPAcceptor= =hproxy.proto.http.HTTPRequester=
+- WebSocket :: =hproxy.proto.ws.WSConnector= =hproxy.proto.ws.WSAcceptor=
+- TLS1.3 :: =hproxy.proto.tls13.TLS13Connector= # 纯 Python 实现，只有连接器
+- Socks5 :: =hproxy.proto.socks5.Socks5Connector= =hproxy.proto.socks5.Socks5Acceptor= =hproxy.proto.socks5.AutoAcceptor= # 自动识别 Socks5/HTTP 代理请求
+- Trojan :: =hproxy.proto.socks5.TrojanConnector= =hproxy.proto.socks5.TrojanAcceptor= # 在 =hproxy.proto.socks5= 中
+- VMess :: =hproxy.proto.vmess.VMessConnector= # 只有连接器
+
+
+=hproxy.proto= 还提供了这些类的响应的工具，例如 =hproxy.proto.socks5.get-trojan-auth= 、 =hproxy.proto.vmess.VMessID= 等。
+
+** hproxy.iob
+
+=hproxy.iob= 实现了代理出口、入口的可序列配置对象 =Async?OUB/INB= 。这
+些对象可以被序列化、打开代理底层的 TCP/TLS/WS/WSS 流、根据 =scheme= 和
+可选的 =extra= 字段重复生成对应的不可复用的代理连接器/接收器对象。
+
+例子：
+
+#+begin_src hy
+  ;;; 本地 1080 端口开启的自动识别 Socks5/HTTP 的代理入口
+  (INB.from-conf
+    (INBConf.model-validate
+      {"scheme"   "auto"
+       "host"     "localhost"
+       "port"     1080
+       "tls"      None
+       "ws"       None
+       "extra"    None}))
+
+  ;;; 10811 端口的 vmess-over-wss 代理出口
+  (OUB.from-conf
+    (OUBConf.model-validate
+      {"managed"   False
+       "enabled"   True
+       "name"      "forward"
+       "group"     "forward"
+       "dnsname"   "your.vmess.server.local"
+       "delay"     0.0
+       "scheme"    "vmess"
+       "host"      "your.vmess.server.local"
+       "port"      10811
+       "tls"       {"host" "your.vmess.server.local" "cafile" None}
+       "ws"        {"host" "your.vmess.server.local" "path" "/"}
+       "extra"     {"id" "you-vmess-id"}}))
+
+  ;;; 特殊 scheme，丢弃所有请求
+  (OUB.from-conf
+    (OUBConf.model-validate
+      {"managed"   False
+       "enabled"   True
+       "name"      "block"
+       "group"     "block"
+       "dnsname"   ""
+       "delay"     0.0
+       "scheme"    "block"
+       "host"      ""
+       "port"      0
+       "tls"       None
+       "ws"        None
+       "extra"     None}))
+
+  ;;; 特殊 scheme，直接执行请求连接目的主机端口
+  (OUB.from-conf
+    (OUBConf.model-validate
+      {"managed"   False
+       "enabled"   True
+       "name"      "direct"
+       "group"     "direct"
+       "dnsname"   ""
+       "delay"     0.0
+       "scheme"    "direct"
+       "host"      ""
+       "port"      0
+       "tls"       None
+       "ws"        None
+       "extra"     None}))
+#+end_src
+
+=hproxy.proto= 中提供的代理出口/入口 =scheme= 包括 =block= =direct=
+=auto= =http= =socks5= =trojan= =vmess= ，其中 =auto= 仅入口， =block=
+=direct= =vmess= 仅出口。
+
+** hproxy.cli
+
+*** scripts
+
+#+begin_src sh
+  PYTHONPATH=. hy scripts/confgen.hy > config.yaml # 生成配置文件模板
+
+  # 可选的，从社区维护的代理规则集中生成 tags，复制到配置中
+  git clone https://github.com/v2fly/domain-list-community
+  hy scripts/tagsgen.hy > tags.yaml
+#+end_src
+
+*** hproxy.cli.ls
+
+#+begin_src sh
+  hy -m hproxy ls                 # 列出所有使用的出口
+  hy -m hproxy ls -a              # 列出所有出口
+#+end_src
+
+*** hproxy.cli.run
+
+#+begin_src sh
+  hy -m hproxy run                # 运行代理服务
+#+end_src
+
+*** hproxy.cli.curl
+
+#+begin_src sh
+  hy -m hproxy curl http://www.google.com # 请求并输出 Google 的 HTTP 主页
+  hy -m hproxy curl -v direct -o google.html https://www.google.com # 通过 direct 组代理出口请求并保存 Google 的 HTTPS 主页
+
+  # curl 风格的参数，添加到 url 之后
+  hy -m hproxy curl https://www.google.com -X POST -H "Content-Type: application/json" -H "Content-Length: 10"
+
+  hy -m hproxy curl dns://8.8.8.8 www.google.com # dns 查询
+  hy -m hproxy curl dot://8.8.8.8 -t AAAA www.google.com # dot IPv6 查询
+#+end_src
+
+*** hproxy.cli.dig
+
+#+begin_src sh
+  hy -m hproxy dig
+  hy -m hproxy dig -v direct -t forward dns://8.8.8.8 -c AAAA
+#+end_src
+
+利用 =hproxy.cli.curl= 解析代理出口组所有出口的域名，出口的域名将被附
+加在最后构成一个 curl 命令。
+
+*** hproxy.cli.ping
+
+#+begin_src sh
+  hy -m hproxy ping
+  hy -m hproxy -t forward ping http://www.google.com
+  hy -m hproxy -t forward ping https://www.google.com -X POST
+#+end_src
+
+利用 =hproxy.cli.curl= 测试代理出口组所有出口的可用性和延迟。
+
+*** hproxy.cli.fetch
+
+#+begin_src sh
+  hy -m hproxy fetch
+#+end_src
+
+从代理出口组的所有 V2rayN 格式的订阅链接中获取代理出口。订阅链接存储在
+配置文件的 =extra.fetchers= 中。
+
+** TODOS
+
+*** TODO document it
+
+完善文档，翻译成英文。
+
+*** TODO hproxy.proto.tls13 证书验证
+
+目前 curl、dig、ping 使用的自带的 TLS 实现没有验证证书。
+
+基于
+[[https:/cryptography.io/en/latest/x509/verification/][cyrptography.x509.verification(WIP)]]
+实现证书验证。
+
+*** TODO hproxy.cli.dig 调试
+
+因未知原因 dig 即使设置了很大的超时时间也总是超时，而 curl 可以正常进
+行域名解析。
+
+*** TODO hproxy.proto.vmess 实现接收器
+
+vmess-aead 比 vmess-legacy 更好实现，主要问题在于如何全局管理 eaid，或
+者不检查重方攻击。
+
+*** TODO hproxy.proto.tls13 完善
+
+=hproxy.proto.tls13= 最大的问题是前面的证书验证问题，还有一些小问题，
+包括实现 PSK 机制、处理密钥更新请求等。
+
+考虑实现服务端。
