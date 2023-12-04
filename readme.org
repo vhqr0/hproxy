@@ -42,15 +42,6 @@
 
 =hproxy.proto= 还提供了这些类的响应的工具，例如 =hproxy.proto.socks5.get-trojan-auth= 、 =hproxy.proto.vmess.VMessID= 等。
 
-通过代理配置发起请求的例子：
-
-#+begin_src hy
-  (let [requester (HTTPRequester :meth "GET" :path "/" :host "www.google.com")
-        highest-connector (if https? (TLS13Connector :host "www.google.com") None)]
-    (with [stream (.connect oub "www.google.com" (if https? 443 80) requester.head highest-connector)]
-      (.request requester stream)))
-#+end_src
-
 ** hproxy.iob
 
 =hproxy.iob= 实现了代理出口、入口的可序列配置对象 =Async?OUB/INB= 。这
@@ -122,6 +113,15 @@
 =hproxy.proto= 中提供的代理出口/入口 =scheme= 包括 =block= =direct=
 =auto= =http= =socks5= =trojan= =vmess= ，其中 =auto= 仅入口， =block=
 =direct= =vmess= 仅出口。
+
+通过代理配置发起请求的例子：
+
+#+begin_src hy
+  (let [requester (HTTPRequester :meth "GET" :path "/" :host "www.google.com")
+        highest-connector (if https? (TLS13Connector :host "www.google.com") None)]
+    (with [stream (.connect oub "www.google.com" (if https? 443 80) requester.head highest-connector)]
+      (.request requester stream)))
+#+end_src
 
 ** hproxy.cli
 
