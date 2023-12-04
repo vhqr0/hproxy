@@ -2,8 +2,8 @@
 
 ** Overview
 
-- hproxy.proto :: 流协议的连接器、接收器、请求器的实现集合，包括 DNS、
-  HTTP、WebSocket、TLS1.3、Socks5、Tronjan、VMess
+- hproxy.proto :: 流协议的连接器/接收器/请求器的集合，包括 DNS、HTTP、
+  WebSocket、TLS1.3、Socks5、Tronjan、VMess
 - hproxy.iob :: 代理出入口的可序列化配置对象实现，包括 Block、Direct、
   HTTP、Socks5、Trojan 和 VMess
 - hproxy.cli :: 代理工具集，包括配置管理、运行代理服务、通过代理进行
