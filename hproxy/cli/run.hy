@@ -69,7 +69,7 @@
             (log-info-exc "except while connecting to %s %d via %s: [%s]%.60s"
                           host port oub.conf.name (type e) e)))
         (else
-          (log-info "failed to connect to %s %d")
+          (log-info "failed to connect to %s %d" host port)
           (return)))
 
       (with/a [_ oub-stream]
